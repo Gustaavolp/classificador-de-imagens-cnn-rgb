@@ -1,0 +1,79 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Local development settings
+.env
+.vscode/
+.idea/
+
+# Project specific
+logs/
+logs/*.log
+*.h5
+*.keras
+*.model
+*.pkl
+*.meta
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data files (optional, uncomment if needed)
+# data/*.csv
+# *.csv
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Compiled Python modules
+*.pyc
+*.pyo
+*.spec
+
+# Tensorflow / Keras directories
+.keras/
+.tensorflow/
+
+# Temporary files
+*~
+.*.swp
+.*.swo
