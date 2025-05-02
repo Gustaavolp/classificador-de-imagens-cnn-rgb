@@ -25,8 +25,8 @@ Uma aplicação com interface gráfica para análise de imagens e classificaçã
 
 1. Clone este repositório:
    ```
-   git clone https://github.com/seu-usuario/neural-network-feature-extractor.git
-   cd neural-network-feature-extractor
+   git clone https://github.com/Gustaavolp/Classificador-de-Imagens-CNN-RGB.git
+   cd Classificador-de-Imagens-CNN-RGB
    ```
 
 2. Instale as dependências:
@@ -103,7 +103,7 @@ Opções adicionais:
 ## Estrutura do Projeto
 
 ```
-neural-network-feature-extractor/
+Classificador-de-Imagens-CNN-RGB/
 ├── main.py                      # Ponto de entrada da aplicação
 ├── requirements.txt             # Dependências do projeto
 ├── images/                      # Imagens de documentação
@@ -165,7 +165,7 @@ neural-network-feature-extractor/
 
 ## Contribuições
 
-Contribuições são bem-vindas! Sinta-se à vontade para abrir issues ou enviar pull requests.
+Contribuições são bem-vindas! Sinta-se à vontade para abrir issues ou enviar pull requests para o [repositório no GitHub](https://github.com/Gustaavolp/Classificador-de-Imagens-CNN-RGB).
 
 ## Licença
 
