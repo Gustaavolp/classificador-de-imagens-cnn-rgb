@@ -31,6 +31,21 @@ class DataProcessor(QObject):
         if len(class_dirs) < 2:
             raise ValueError("At least two class directories are required")
         
+        # Dicionário de tradução para nomes de classes em inglês
+        traducoes = {
+            "blue": "azul",
+            "red": "vermelho",
+            "green": "verde",
+            "yellow": "amarelo",
+            "orange": "laranja",
+            "purple": "roxo",
+            "brown": "marrom",
+            "black": "preto",
+            "white": "branco",
+            "gray": "cinza",
+            "pink": "rosa"
+        }
+        
         # Prepare empty lists for data
         all_features = []
         all_labels = []
@@ -41,6 +56,12 @@ class DataProcessor(QObject):
             self.status_updated.emit(f"Processing class: {class_dir}")
             self.progress_updated.emit(int((i / total_dirs) * 100))
             
+            # Traduzir o nome da classe se estiver em inglês
+            class_name = class_dir
+            if class_dir.lower() in traducoes:
+                class_name = traducoes[class_dir.lower()]
+                print(f"Traduzindo classe '{class_dir}' para '{class_name}'")
+            
             class_path = os.path.join(data_dir, class_dir)
             image_files = [f for f in os.listdir(class_path) 
                           if os.path.isfile(os.path.join(class_path, f)) and 
@@ -49,13 +70,13 @@ class DataProcessor(QObject):
             total_images = len(image_files)
             for j, img_file in enumerate(image_files):
                 if j % max(1, int(total_images / 10)) == 0:
-                    self.status_updated.emit(f"Class {class_dir}: Processing image {j+1}/{total_images}")
+                    self.status_updated.emit(f"Class {class_name}: Processing image {j+1}/{total_images}")
                 
                 try:
                     img_path = os.path.join(class_path, img_file)
                     features = self.extract_features(img_path, rgb_attributes)
                     all_features.append(features)
-                    all_labels.append(class_dir)
+                    all_labels.append(class_name)  # Usar o nome traduzido
                 except Exception as e:
                     print(f"Error processing {img_path}: {str(e)}")
         
@@ -64,7 +85,14 @@ class DataProcessor(QObject):
         # Create DataFrame
         feature_columns = []
         for attr in rgb_attributes:
-            feature_columns.append(f"{attr['name']}")
+            # Traduzir nomes de atributos se contiverem nomes de classes em inglês
+            attr_name = attr['name']
+            for eng, pt in traducoes.items():
+                if eng.lower() in attr_name.lower():
+                    attr_name = attr_name.replace(eng, pt)
+                    print(f"Traduzindo atributo '{attr['name']}' para '{attr_name}'")
+            
+            feature_columns.append(attr_name)
             
         # Convert feature lists to proper DataFrame
         df = pd.DataFrame(all_features, columns=feature_columns)
@@ -117,7 +145,7 @@ class DataProcessor(QObject):
         test_df.to_csv('data/test_data.csv', index=False)
         
         # Registrar informações das classes
-        print(f"Classes processadas: {unique_classes}")
+        print(f"Classes processadas (traduzidas): {unique_classes}")
         print(f"Mapeamento de classes: {class_mapping}")
         
         self.status_updated.emit("Data processing complete")
@@ -143,190 +171,31 @@ class DataProcessor(QObject):
         Returns:
             List of extracted feature values
         """
-        # Verificar se os atributos RGB são válidos
-        if not rgb_attributes or len(rgb_attributes) == 0:
-            raise ValueError("Nenhum atributo RGB fornecido para extração")
-        
         # Load image
-        print(f"Carregando imagem: {image_path}")
         image = cv2.imread(image_path)
         if image is None:
             raise ValueError(f"Could not load image: {image_path}")
         
-        # Get image dimensions and basic info
-        height, width, channels = image.shape
-        print(f"Dimensões da imagem: {width}x{height}, {channels} canais")
-        
         # Convert from BGR to RGB (OpenCV loads as BGR)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
-        # Calcular histograma de cores para diagnóstico
-        hist_r = cv2.calcHist([image], [0], None, [256], [0, 256])
-        hist_g = cv2.calcHist([image], [1], None, [256], [0, 256])
-        hist_b = cv2.calcHist([image], [2], None, [256], [0, 256])
-        
-        # Normalizar histogramas
-        hist_r = hist_r / np.sum(hist_r)
-        hist_g = hist_g / np.sum(hist_g)
-        hist_b = hist_b / np.sum(hist_b)
-        
-        # Calcular valores médios, máximos e mínimos para cada canal
-        r_avg = np.mean(image[:,:,0])
-        g_avg = np.mean(image[:,:,1])
-        b_avg = np.mean(image[:,:,2])
-        
-        r_max = np.max(image[:,:,0])
-        g_max = np.max(image[:,:,1])
-        b_max = np.max(image[:,:,2])
-        
-        r_min = np.min(image[:,:,0])
-        g_min = np.min(image[:,:,1])
-        b_min = np.min(image[:,:,2])
-        
-        print(f"Canal R: média={r_avg:.1f}, min={r_min}, max={r_max}")
-        print(f"Canal G: média={g_avg:.1f}, min={g_min}, max={g_max}")
-        print(f"Canal B: média={b_avg:.1f}, min={b_min}, max={b_max}")
-        
         # Extract features for each attribute
         features = []
-        total_pixels = image.shape[0] * image.shape[1]
         
-        for i, attr in enumerate(rgb_attributes):
-            # Verificar se o atributo tem todos os campos necessários
-            required_fields = ['name', 'r_min', 'r_max', 'g_min', 'g_max', 'b_min', 'b_max']
-            for field in required_fields:
-                if field not in attr:
-                    raise ValueError(f"Atributo {i} não possui o campo obrigatório '{field}'")
-            
+        for attr in rgb_attributes:
             # Create mask for the RGB range
             lower_bound = np.array([attr['r_min'], attr['g_min'], attr['b_min']])
             upper_bound = np.array([attr['r_max'], attr['g_max'], attr['b_max']])
             
-            print(f"Aplicando atributo {attr['name']}: RGB faixa [{lower_bound}] a [{upper_bound}]")
-            
-            # Verificar se os limites são válidos
-            if np.any(lower_bound >= upper_bound):
-                print(f"ALERTA: Limites inválidos para atributo {attr['name']}: [{lower_bound}] a [{upper_bound}]")
-                # Corrigir automaticamente limites problemáticos
-                for j in range(3):
-                    if lower_bound[j] >= upper_bound[j]:
-                        upper_bound[j] = min(255, lower_bound[j] + 1)
-                print(f"Limites corrigidos: [{lower_bound}] a [{upper_bound}]")
-            
-            # Cálculo aprimorado da característica usando vários métodos
-            
-            # Método 1: Contagem de pixels na faixa (abordagem tradicional)
             mask = cv2.inRange(image, lower_bound, upper_bound)
+            
+            # Calculate percentage of pixels in the range
             pixel_count = np.sum(mask > 0)
+            total_pixels = image.shape[0] * image.shape[1]
             percentage = pixel_count / total_pixels
             
-            # Método 2: Peso baseado na distância do pixel ao centro da faixa
-            # Quanto mais próximo do centro, maior o peso
-            center_r = (attr['r_min'] + attr['r_max']) / 2
-            center_g = (attr['g_min'] + attr['g_max']) / 2
-            center_b = (attr['b_min'] + attr['b_max']) / 2
-            
-            # Calcular contribuição do histograma para esta faixa
-            r_contribution = np.sum(hist_r[attr['r_min']:attr['r_max']+1])
-            g_contribution = np.sum(hist_g[attr['g_min']:attr['g_max']+1])
-            b_contribution = np.sum(hist_b[attr['b_min']:attr['b_max']+1])
-            
-            # Combinar canais - usar o menor valor para garantir que todos os canais contribuam
-            # Isso faz com que a cor tenha que estar presente em todos os canais para pontuar alto
-            rgb_combined = min(r_contribution, g_contribution, b_contribution) * 3
-            
-            # Ponderar mais para canais dominantes no atributo
-            r_range = attr['r_max'] - attr['r_min']
-            g_range = attr['g_max'] - attr['g_min']
-            b_range = attr['b_max'] - attr['b_min']
-            
-            # Se algum canal tem um intervalo pequeno, ele é mais específico e deve ter mais peso
-            r_weight = 1.0 / max(r_range, 1) if r_range > 0 else 0
-            g_weight = 1.0 / max(g_range, 1) if g_range > 0 else 0
-            b_weight = 1.0 / max(b_range, 1) if b_range > 0 else 0
-            
-            # Normalizar pesos
-            total_weight = r_weight + g_weight + b_weight
-            if total_weight > 0:
-                r_weight /= total_weight
-                g_weight /= total_weight
-                b_weight /= total_weight
-            else:
-                r_weight = g_weight = b_weight = 1/3
-            
-            # Calcular característica final com todos os métodos combinados
-            # Damos mais peso para a proporção simples de pixels (método 1)
-            final_percentage = percentage * 0.7 + rgb_combined * 0.3
-            
-            # Acentuar as diferenças elevando ao quadrado - isso torna valores pequenos ainda menores
-            # e valores grandes mais evidentes, facilitando a classificação
-            final_percentage = final_percentage ** 0.5  # Usar raiz quadrada para suavizar diferenças
-            
-            # Garantir valor mínimo para evitar zeros
-            final_percentage = max(final_percentage, 0.0001)
-            
-            print(f"Atributo {attr['name']}: {pixel_count} pixels ({percentage*100:.2f}%), valor final: {final_percentage:.4f}")
-            
-            # Adicionar característica
-            features.append(final_percentage)
-            
-            # Verificar se temos pelo menos algum pixel válido
-            if pixel_count == 0:
-                print(f"ALERTA: Nenhum pixel encontrado para o atributo {attr['name']}!")
-                
-                # Usar um valor pequeno baseado em quão próxima a cor média da imagem está da faixa
-                r_dist = max(0, min(r_avg - attr['r_max'], attr['r_min'] - r_avg))
-                g_dist = max(0, min(g_avg - attr['g_max'], attr['g_min'] - g_avg))
-                b_dist = max(0, min(b_avg - attr['b_max'], attr['b_min'] - b_avg))
-                
-                # Quanto menor a distância, mais próximo da faixa
-                total_dist = r_dist + g_dist + b_dist
-                if total_dist < 100:  # Se estiver relativamente próximo
-                    fallback_value = 0.1 * (1 - total_dist/300)  # Valor entre 0 e 0.1 baseado na proximidade
-                    print(f"Atribuindo valor de proximidade: {fallback_value:.4f}")
-                    features[-1] = fallback_value  # Substituir o último valor adicionado
+            features.append(percentage)
         
-        # Verificar se todas as características são iguais (problema potencial)
-        if len(features) > 1 and all(f == features[0] for f in features):
-            print("ALERTA: Todas as características têm o mesmo valor! Isso causará problemas na classificação.")
-            
-            # Tentar fazer uma classificação direta baseada nos valores médios RGB da imagem
-            normalized_features = []
-            
-            # Para cada atributo, calcular quão bem ele corresponde à cor média da imagem
-            for i, attr in enumerate(rgb_attributes):
-                center_r = (attr['r_min'] + attr['r_max']) / 2
-                center_g = (attr['g_min'] + attr['g_max']) / 2
-                center_b = (attr['b_min'] + attr['b_max']) / 2
-                
-                # Calcular distância da cor média ao centro do atributo
-                dist = np.sqrt(((r_avg - center_r)/255)**2 + ((g_avg - center_g)/255)**2 + ((b_avg - center_b)/255)**2)
-                
-                # Inverter a distância: quanto maior, pior a correspondência
-                match_score = max(0, 1 - dist)
-                
-                # Aplicar uma função exponencial para aumentar a diferença
-                match_score = match_score ** 2
-                
-                normalized_features.append(match_score)
-            
-            # Normalizar para que a soma seja 1
-            total = sum(normalized_features)
-            if total > 0:
-                normalized_features = [f/total for f in normalized_features]
-            
-            print(f"Características ajustadas baseadas na cor média: {normalized_features}")
-            features = normalized_features
-            
-        # Normalizar as características para que somem 1.0
-        # Isso ajuda a interpretar como probabilidades relativas
-        feature_sum = sum(features)
-        if feature_sum > 0:
-            normalized_features = [f / feature_sum for f in features]
-            print(f"Características normalizadas: {normalized_features}")
-            return normalized_features
-        
-        print(f"Características extraídas: {features}")
         return features
     
     def extract_image_features(self, image_path, rgb_attributes):

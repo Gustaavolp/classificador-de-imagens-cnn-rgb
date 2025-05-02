@@ -1241,34 +1241,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.log_widget.log(f"Aviso: Não foi possível remover diretório temporário: {str(e)}", level="warning")
         
-        # Armazenar o modelo treinado
-        self.current_model = results.get('model')
-        
-        # Verificar se temos um modelo válido
-        if self.current_model is None:
-            self.log_widget.log("Aviso: Nenhum modelo foi retornado após o treinamento!", level="warning")
-            # Criar um modelo dummy se não temos um
-            import json
-            class DummyModel:
-                def __init__(self):
-                    self.params = {'type': 'dummy_model'}
-                def to_json(self):
-                    return json.dumps(self.params)
-            self.current_model = DummyModel()
-        
-        # Extrair o histórico de treinamento
-        history = results.get('history', {})
-        
-        # Verificar se temos dados suficientes para plotar
-        if not history or 'accuracy' not in history or len(history['accuracy']) < 1:
-            self.log_widget.log("Aviso: Histórico de treinamento vazio ou incompleto", level="warning")
-            # Criar histórico fictício se não temos um
-            history = {
-                'accuracy': [0.5, 0.6, 0.7, 0.8, 0.9],
-                'val_accuracy': [0.4, 0.5, 0.6, 0.7, 0.8],
-                'loss': [0.5, 0.4, 0.3, 0.2, 0.1],
-                'val_loss': [0.6, 0.5, 0.4, 0.3, 0.2]
-            }
+        self.current_model = results['model']
+        history = results['history']
         
         # Limpar figura anterior e TODOS os elementos visíveis
         self.figure.clear()
@@ -1356,11 +1330,12 @@ class MainWindow(QMainWindow):
                             color="white" if cm[i, j] > thresh else "black",
                             fontsize=12)
             
-            # Configurar os ticks corretamente com fonte reduzida
+            # Configurar os ticks corretamente com fonte reduzida e rotação adequada
             if len(class_names) <= 10:  # Só mostrar nomes se não forem muitos
                 ax2.set_xticks(range(len(class_names)))
                 ax2.set_yticks(range(len(class_names)))
-                ax2.set_xticklabels(class_names, rotation=45, ha="right", fontsize=12)
+                # Aumentar a rotação para 90 graus nos rótulos X para evitar sobreposição
+                ax2.set_xticklabels(class_names, rotation=90, ha="center", fontsize=12)
                 ax2.set_yticklabels(class_names, fontsize=12)
             
             # Garantir limite de eixos exatos para a matriz sem margem extra
@@ -1370,8 +1345,8 @@ class MainWindow(QMainWindow):
             # Definir proporção quadrada para o gráfico da matriz
             ax2.set_box_aspect(0.95)
             
-            # Reduzir espaçamento dos ticks e labels
-            ax2.tick_params(axis='both', which='major', pad=2)
+            # Adicionar mais espaço na parte inferior para os rótulos X rotacionados
+            ax2.tick_params(axis='x', which='major', pad=8)
             
             ax2.set_xlabel('Predição', fontsize=12)
             ax2.set_ylabel('Valor Real', fontsize=12)
@@ -1774,51 +1749,17 @@ class MainWindow(QMainWindow):
     def save_rgb_attributes(self):
         """Save the defined RGB attributes."""
         attributes = []
-        
-        # Verificar se temos seletores RGB
-        if not hasattr(self, 'rgb_selectors_layout') or self.rgb_selectors_layout.count() == 0:
-            QMessageBox.warning(self, "Sem Seletores RGB", 
-                              "Não há seletores RGB definidos. Por favor, altere para o modo RGB e adicione classes primeiro.")
-            return
-        
-        # Coletar todos os atributos dos seletores
         for i in range(self.rgb_selectors_layout.count()):
             selector_widget = self.rgb_selectors_layout.itemAt(i).widget()
             if selector_widget:
-                # Verificar se o nome é válido
-                name = selector_widget.name_edit.text().strip()
-                if not name:
-                    name = f"Atributo {i+1}"
-                    self.log_widget.log(f"Nome vazio para o seletor {i+1}, usando nome padrão", level="warning")
-                
-                # Obter valores dos sliders e garantir que os intervalos sejam válidos
-                r_min = selector_widget.r_slider_min()
-                r_max = selector_widget.r_slider_max()
-                g_min = selector_widget.g_slider_min()
-                g_max = selector_widget.g_slider_max()
-                b_min = selector_widget.b_slider_min()
-                b_max = selector_widget.b_slider_max()
-                
-                # Corrigir intervalos se necessário
-                if r_min >= r_max:
-                    r_max = min(255, r_min + 1)
-                    self.log_widget.log(f"Intervalo R inválido para {name}, corrigido", level="warning")
-                if g_min >= g_max:
-                    g_max = min(255, g_min + 1)
-                    self.log_widget.log(f"Intervalo G inválido para {name}, corrigido", level="warning")
-                if b_min >= b_max:
-                    b_max = min(255, b_min + 1)
-                    self.log_widget.log(f"Intervalo B inválido para {name}, corrigido", level="warning")
-                
-                # Criar atributo com valores validados
                 attribute = {
-                    'name': name,
-                    'r_min': r_min,
-                    'r_max': r_max,
-                    'g_min': g_min,
-                    'g_max': g_max,
-                    'b_min': b_min,
-                    'b_max': b_max,
+                    'name': selector_widget.name_edit.text(),
+                    'r_min': selector_widget.r_slider_min(),
+                    'r_max': selector_widget.r_slider_max(),
+                    'g_min': selector_widget.g_slider_min(),
+                    'g_max': selector_widget.g_slider_max(),
+                    'b_min': selector_widget.b_slider_min(),
+                    'b_max': selector_widget.b_slider_max(),
                     'r_value': selector_widget.r_slider.value(),
                     'g_value': selector_widget.g_slider.value(),
                     'b_value': selector_widget.b_slider.value(),
@@ -1826,61 +1767,12 @@ class MainWindow(QMainWindow):
                 }
                 attributes.append(attribute)
         
-        # Verificar se temos atributos suficientes
-        if len(attributes) < 2:
-            if QMessageBox.question(self, "Poucos Atributos", 
-                                  "Você definiu menos de 2 atributos RGB. Isso pode não ser suficiente para uma boa classificação. Deseja continuar mesmo assim?",
-                                  QMessageBox.Yes | QMessageBox.No) == QMessageBox.No:
-                return
-        
-        # Verificar se os atributos são distintos
-        unique_values = set()
-        for attr in attributes:
-            attr_key = (attr['r_min'], attr['r_max'], attr['g_min'], attr['g_max'], attr['b_min'], attr['b_max'])
-            unique_values.add(attr_key)
-        
-        if len(unique_values) < len(attributes):
-            if QMessageBox.question(self, "Atributos Duplicados", 
-                                  "Existem atributos RGB com os mesmos valores. Isso pode causar problemas na classificação. Deseja continuar mesmo assim?",
-                                  QMessageBox.Yes | QMessageBox.No) == QMessageBox.No:
-                return
-        
-        # Verificar se algum atributo tem intervalo muito pequeno
-        narrow_intervals = []
-        for attr in attributes:
-            r_range = attr['r_max'] - attr['r_min']
-            g_range = attr['g_max'] - attr['g_min']
-            b_range = attr['b_max'] - attr['b_min']
-            
-            if min(r_range, g_range, b_range) < 5:
-                narrow_intervals.append(attr['name'])
-        
-        if narrow_intervals:
-            narrow_msg = ", ".join(narrow_intervals)
-            if QMessageBox.question(self, "Intervalos Muito Estreitos", 
-                                  f"Os seguintes atributos têm intervalos muito estreitos: {narrow_msg}. Isso pode dificultar a detecção de pixels. Deseja continuar?",
-                                  QMessageBox.Yes | QMessageBox.No) == QMessageBox.No:
-                return
-        
-        # Tudo passou nas verificações, salvar os atributos
         self.rgb_attributes = attributes
-        self.log_widget.log(f"Salvos {len(attributes)} atributos RGB")
+        self.log_widget.log(f"Saved {len(attributes)} RGB attributes")
         
-        # Exibir resumo dos atributos no log
-        for attr in attributes:
-            self.log_widget.log(f"Atributo: {attr['name']}, R: {attr['r_min']}-{attr['r_max']}, G: {attr['g_min']}-{attr['g_max']}, B: {attr['b_min']}-{attr['b_max']}")
-        
-        # Atualizar sumário de configuração
-        self.update_config_summary()
-        
-        # Notificar o usuário
-        QMessageBox.information(self, "Atributos Salvos", 
-                               f"Foram salvos {len(attributes)} atributos RGB com sucesso.")
-        
-        # Habilitar botão de treinamento se tivermos pelo menos 2 classes selecionadas
-        if hasattr(self, 'class_data') and len(self.class_data) >= 2:
-            if hasattr(self, 'train_btn'):
-                self.train_btn.setEnabled(True)
+        # Notify user
+        QMessageBox.information(self, "Attributes Saved", 
+                               f"Successfully saved {len(attributes)} RGB attributes.")
     
     def save_model(self):
         """Save the trained model."""
@@ -1888,188 +1780,86 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Model", "No trained model to save.")
             return
         
-        # Determinar a extensão de arquivo apropriada com base no tipo de modelo
-        is_cnn = self.cnn_btn.isChecked()
-        use_direct_classification = False
-        
-        # Verificar se estamos usando classificação direta
-        if hasattr(self, 'rgb_feature_net') and hasattr(self.rgb_feature_net, 'use_direct_classification'):
-            use_direct_classification = self.rgb_feature_net.use_direct_classification
-        
-        # Definir filtro e extensão de arquivo baseado no tipo
-        if is_cnn:
-            file_filter = "Model Files (*.h5)"
-            default_ext = ".h5"
-        elif use_direct_classification:
-            file_filter = "Model Files (*.json)"
-            default_ext = ".json"
-        else:
-            file_filter = "Model Files (*.h5 *.json)"
-            default_ext = ".h5"
-        
-        # Obter caminho do arquivo através do diálogo de salvamento
+        # Obter caminho do arquivo através do diálogo de salvamento do Windows
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Salvar Modelo", "", file_filter
+            self, "Salvar Modelo", "", "Model Files (*.h5)"
         )
         
         if file_path:
             try:
-                # Garantir que a extensão esteja presente no caminho
-                if not file_path.lower().endswith(default_ext):
-                    file_path += default_ext
-                    
-                self.log_widget.log(f"Salvando modelo em: {file_path}")
-                
-                # Adicionar informações adicionais baseadas no tipo de modelo
+                # Determinar tipo de modelo baseado nos botões
+                is_cnn = self.cnn_btn.isChecked()
                 model_type = "Convolutional Neural Network" if is_cnn else "RGB Feature Network"
                 
                 # Preparar informações do modelo para salvar
                 model_info = {
                     'model': self.current_model,
-                    'type': model_type,
-                    'attributes': self.rgb_attributes if hasattr(self, 'rgb_attributes') else []
+                    'attributes': self.rgb_attributes if hasattr(self, 'rgb_attributes') else [],
+                    'type': model_type
                 }
                 
-                # Adicionar informações específicas do modelo RGB
-                if not is_cnn:
-                    # Incluir os nomes das classes
-                    if hasattr(self, 'class_data') and self.class_data:
-                        model_info['class_names'] = list(self.class_data.keys())
-                    elif hasattr(self, 'rgb_feature_net') and hasattr(self.rgb_feature_net, 'class_names'):
-                        model_info['class_names'] = self.rgb_feature_net.class_names
-                        
-                    # Se for um modelo RGB, incluir o scaler
-                    if hasattr(self, 'rgb_feature_net') and hasattr(self.rgb_feature_net, 'scaler'):
-                        model_info['scaler'] = self.rgb_feature_net.scaler
-                        
-                    # Verificar se temos pesos de atributos
-                    if hasattr(self, 'rgb_feature_net'):
-                        if hasattr(self.rgb_feature_net, 'feature_weights'):
-                            model_info['feature_weights'] = self.rgb_feature_net.feature_weights
-                        if hasattr(self.rgb_feature_net, 'feature_means'):
-                            model_info['feature_means'] = self.rgb_feature_net.feature_means
-                            
-                    # Indicar uso de classificação direta
-                    model_info['use_direct_classification'] = use_direct_classification
-                
-                # Log detalhado
-                self.log_widget.log(f"Tipo de modelo: {model_type}")
-                self.log_widget.log(f"Extensão de arquivo: {default_ext}")
-                if 'class_names' in model_info:
-                    self.log_widget.log(f"Classes incluídas: {model_info['class_names']}")
+                # Se for um modelo RGB, incluir o scaler
+                if not is_cnn and hasattr(self, 'rgb_feature_net') and hasattr(self.rgb_feature_net, 'scaler'):
+                    model_info['scaler'] = self.rgb_feature_net.scaler
+                    self.log_widget.log("Including scaler in saved model")
                 
                 # Salvar o modelo
                 self.model_utils.save_model(model_info, file_path)
                 self.log_widget.log(f"Model saved to {file_path}")
                 QMessageBox.information(self, "Model Saved", f"Model successfully saved to {file_path}")
             except Exception as e:
-                error_msg = f"Error saving model: {str(e)}"
-                self.log_widget.log(error_msg, level="error")
-                QMessageBox.critical(self, "Error", error_msg)
-                import traceback
-                traceback.print_exc()
+                self.handle_error(f"Error saving model: {str(e)}")
     
     def load_model(self):
         """Load a trained model."""
-        # Oferecer filtros para diferentes tipos de modelos
-        file_filter = "Model Files (*.h5 *.json);;H5 Models (*.h5);;JSON Models (*.json);;All Files (*.*)"
-        
-        file_path, selected_filter = QFileDialog.getOpenFileName(
-            self, "Carregar Modelo", "", file_filter
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Load Model", "models/", "Model Files (*.h5)"
         )
         
         if file_path:
             try:
-                self.log_widget.log(f"Tentando carregar modelo de: {file_path}")
+                model_info = self.model_utils.load_model(file_path)
+                self.current_model = model_info['model']
                 
-                # Desativar temporariamente a interface
-                self.setEnabled(False)
-                QApplication.processEvents()
+                # Extract and store RGB attributes and model type if available
+                self.rgb_attributes = model_info.get('attributes', [])
+                self.loaded_model_type = model_info.get('type', "Unknown Model Type")
                 
-                # Carregar o modelo com melhor tratamento de erros
-                try:
-                    model_info = self.model_utils.load_model(file_path)
-                    self.current_model = model_info.get('model')
-                    
-                    # Verificar se o modelo foi carregado corretamente
-                    if self.current_model is None:
-                        raise ValueError("O carregamento falhou - modelo retornado é None")
-                    
-                    # Extract and store attributes based on model type
-                    if 'attributes' in model_info and model_info['attributes']:
-                        self.rgb_attributes = model_info['attributes']
-                        self.log_widget.log(f"Atributos RGB carregados: {len(self.rgb_attributes)}")
-                    
-                    # Determinar e configurar tipo de modelo
-                    self.loaded_model_type = model_info.get('type', "Unknown Model Type")
-                    
-                    # Configurar a interface para o tipo de modelo carregado
-                    if "Convolutional" in self.loaded_model_type or self.loaded_model_type == "CNN":
-                        self.log_widget.log("Modelo CNN detectado, configurando interface")
-                        self.set_model_type("CNN")
+                # Se for um modelo RGB, garantir que o scaler está inicializado
+                if "RGB Feature" in self.loaded_model_type:
+                    # Verificar se temos um scaler no model_info
+                    if 'scaler' in model_info and model_info['scaler'] is not None:
+                        # Usar o scaler que foi salvo com o modelo
+                        self.rgb_feature_net.scaler = model_info['scaler']
+                        self.log_widget.log("Scaler loaded from model file")
                     else:
-                        self.log_widget.log("Modelo RGB detectado, configurando interface")
-                        self.set_model_type("RGB")
-                    
-                    # Check for RGB-specific properties
-                    if "RGB" in self.loaded_model_type:
-                        # If it's an RGB model, ensure we have a model instance to work with
-                        if not hasattr(self, 'rgb_feature_net'):
-                            from models.rgb_net import RGBFeatureNet
-                            self.rgb_feature_net = RGBFeatureNet()
+                        # Se não temos um scaler, criamos um novo e informamos o usuário
+                        from sklearn.preprocessing import StandardScaler
+                        self.rgb_feature_net.scaler = StandardScaler()
+                        self.log_widget.log("Warning: No scaler found in model, a new one will be created", level="warning")
                         
-                        # Configure RGB features network with loaded parameters
-                        if 'use_direct_classification' in model_info:
-                            self.rgb_feature_net.use_direct_classification = model_info['use_direct_classification']
-                            self.log_widget.log(f"Configurado modo de classificação: {'Direto' if model_info['use_direct_classification'] else 'Rede Neural'}")
-                        
-                        # Copy feature weights if available
-                        if 'feature_weights' in model_info and model_info['feature_weights'] is not None:
-                            self.rgb_feature_net.feature_weights = model_info['feature_weights']
-                            self.log_widget.log("Pesos de características carregados")
-                            
-                        # Copy feature means if available
-                        if 'feature_means' in model_info and model_info['feature_means'] is not None:
-                            self.rgb_feature_net.feature_means = model_info['feature_means']
-                            self.log_widget.log("Médias de características carregadas")
-                            
-                        # Set up class names
-                        if 'class_names' in model_info and model_info['class_names']:
-                            self.rgb_feature_net.class_names = model_info['class_names']
-                            self.log_widget.log(f"Classes carregadas: {model_info['class_names']}")
-                            
-                            # Attempt to reconstruct class_data for interface
-                            if not hasattr(self, 'class_data') or not self.class_data:
-                                self.class_data = {class_name: 0 for class_name in model_info['class_names']}
-                                self.log_widget.log("Reconstruído class_data para interface")
-                                self.update_selected_classes_list()
-                        
-                        # Set up scaler
-                        if 'scaler' in model_info and model_info['scaler'] is not None:
-                            self.rgb_feature_net.scaler = model_info['scaler']
-                            self.log_widget.log("Scaler carregado do modelo")
-                    
-                    # Update UI
-                    self.model_path_label.setText(file_path)
-                    if hasattr(self, 'classify_btn'):
-                        self.classify_btn.setEnabled(True)
-                    
-                    self.log_widget.log(f"Modelo carregado com sucesso: {self.loaded_model_type}")
-                    QMessageBox.information(self, "Modelo Carregado", 
-                                            f"Modelo carregado com sucesso!\nTipo: {self.loaded_model_type}")
-                    
-                except Exception as e:
-                    # Mostrar erro detalhado
-                    error_msg = f"Erro ao carregar modelo: {str(e)}"
-                    self.log_widget.log(error_msg, level="error")
-                    QMessageBox.critical(self, "Erro de Carregamento", 
-                                         f"Falha ao carregar o modelo.\nErro: {str(e)}\n\n"
-                                         f"Verifique se o arquivo ({file_path}) é um modelo válido.")
-                    import traceback
-                    traceback.print_exc()
-            finally:
-                # Reabilitar a interface
-                self.setEnabled(True)
+                        # Se tivermos atributos RGB, podemos inicializar o scaler com dados de exemplo
+                        if self.rgb_attributes and len(self.rgb_attributes) > 0:
+                            import numpy as np
+                            # Criar dados de exemplo baseados no número de atributos
+                            example_data = np.random.rand(10, len(self.rgb_attributes))
+                            self.rgb_feature_net.scaler.fit(example_data)
+                            self.log_widget.log("Scaler initialized with example data")
+                
+                # Update UI
+                self.model_path_label.setText(file_path)
+                self.classify_btn.setEnabled(True)
+                
+                # Log message with model type
+                self.log_widget.log(f"Loaded {self.loaded_model_type} from {file_path}")
+                
+                # Show message about model type
+                if "RGB Feature" in self.loaded_model_type:
+                    if not self.rgb_attributes:
+                        self.log_widget.log("Warning: No RGB attributes found in model", level="warning")
+                
+            except Exception as e:
+                self.handle_error(f"Error loading model: {str(e)}")
     
     def select_image(self):
         """Select an image for classification."""
@@ -2089,61 +1879,81 @@ class MainWindow(QMainWindow):
                 self.handle_error(f"Error loading image: {str(e)}")
     
     def classify_image(self):
-        """Classify the loaded image with the trained model."""
-        if not hasattr(self, 'classifier') or self.classifier is None:
-            QMessageBox.warning(self, "Modelo não Carregado", 
-                              "Por favor, carregue ou treine um modelo primeiro.")
+        """Classify the selected image using the loaded model."""
+        if not self.current_model:
+            QMessageBox.warning(self, "No Model", "Please load a model first.")
             return
-            
-        if not hasattr(self, 'current_image_path') or not self.current_image_path:
-            QMessageBox.warning(self, "Sem Imagem", 
-                              "Por favor, carregue uma imagem para classificar.")
+        if not self.image_path_label.text() or self.image_path_label.text() == "No image selected":
+            QMessageBox.warning(self, "No Image", "Please select an image first.")
             return
-            
-        # Classificar a imagem
-        if self.current_mode == "CNN":
-            result = self.classifier.classify_image(self.current_image_path)
-        else:  # RGB mode
-            # Verificar se temos atributos RGB
-            if not hasattr(self, 'rgb_attributes') or not self.rgb_attributes:
-                QMessageBox.warning(self, "Sem Atributos RGB", 
-                                  "Por favor, defina e salve atributos RGB primeiro.")
-                return
-                
-            # Classificar usando RGB
-            result = self.rgb_classifier.classify_image(
-                self.current_image_path, 
-                self.rgb_model if hasattr(self, 'rgb_model') else None,
-                self.rgb_attributes
-            )
         
-        # Exibir resultados
-        if 'class' in result and 'probabilities' in result:
-            # Log da classificação
-            self.log_widget.log(f"Classification result: {result['class']}")
+        try:
+            image_path = self.image_path_label.text()
             
-            # Atualizar texto de resultado
-            self.result_label.setText(f"Predicted Class: {result['class']}")
+            # Iniciar classificação em uma thread separada
+            self.statusBar().showMessage("Classificando imagem...")
             
-            # Formatar probabilidades para exibição
-            prob_text = "Probabilitites:\n"
+            # Obter tipo de modelo da informação carregada ou combo box
+            model_type = getattr(self, 'loaded_model_type', None) or self.model_type_combo.currentText()
+            self.log_widget.log(f"Using model type: {model_type} for classification")
             
-            # Ordenar probabilidades do maior para o menor
-            sorted_probs = sorted(
-                result['probabilities'].items(), 
-                key=lambda x: x[1], 
-                reverse=True
-            )
+            # Criar worker thread
+            if "RGB Feature" in model_type:
+                # Para RGB Feature Network, precisamos dos atributos RGB
+                if not self.rgb_attributes:
+                    QMessageBox.warning(self, "Missing RGB Attributes", 
+                                      "This model requires RGB attributes for classification.")
+                    self.statusBar().showMessage("Classification cancelled - missing RGB attributes")
+                    return
+                
+                worker = WorkerThread(
+                    self.rgb_feature_net.classify_image, 
+                    image_path, 
+                    self.current_model,
+                    self.rgb_attributes
+                )
+                self.log_widget.log(f"Using RGB Feature Network with {len(self.rgb_attributes)} attributes")
+            else:  # CNN
+                worker = WorkerThread(
+                    self.cnn.classify_image, 
+                    image_path, 
+                    self.current_model
+                )
+                self.log_widget.log("Using CNN for classification")
             
-            for class_name, prob in sorted_probs:
-                # Formatar como percentagem com 2 casas decimais
-                prob_text += f"{class_name}: {prob*100:.2f}%\n"
+            # Conectar sinais
+            worker.task_finished.connect(self.classification_finished)
+            worker.error_occurred.connect(self.handle_error)
             
-            self.probabilities_label.setText(prob_text)
-        else:
-            self.log_widget.log("Classification failed. No valid result returned.")
-            self.result_label.setText("Classification failed")
-            self.probabilities_label.setText("")
+            # Add to thread list to prevent premature garbage collection
+            self.worker_threads.append(worker)
+            global active_worker_threads
+            active_worker_threads.append(worker)
+            
+            # Start thread
+            worker.start()
+            
+        except Exception as e:
+            self.handle_error(f"Error classifying image: {str(e)}")
+            self.statusBar().showMessage("Classification failed")
+    
+    def classification_finished(self, results):
+        """Handle classification results."""
+        self.statusBar().showMessage("Classification complete")
+        
+        predicted_class = results['class']
+        probabilities = results['probabilities']
+        
+        # Update result labels
+        self.class_result_label.setText(f"Predicted Class: {predicted_class}")
+        
+        prob_text = "Probabilities:\n"
+        for cls, prob in probabilities.items():
+            prob_text += f"{cls}: {prob:.4f}\n"
+        
+        self.class_probabilities.setText(prob_text)
+        
+        self.log_widget.log(f"Classification result: {predicted_class}")
     
     def data_processing_finished(self, result):
         """Handle data processing completion."""
