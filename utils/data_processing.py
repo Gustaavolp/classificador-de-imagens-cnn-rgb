@@ -143,10 +143,19 @@ class DataProcessor(QObject):
         Returns:
             List of extracted feature values
         """
+        # Verificar se os atributos RGB são válidos
+        if not rgb_attributes or len(rgb_attributes) == 0:
+            raise ValueError("Nenhum atributo RGB fornecido para extração")
+        
         # Load image
+        print(f"Carregando imagem: {image_path}")
         image = cv2.imread(image_path)
         if image is None:
             raise ValueError(f"Could not load image: {image_path}")
+        
+        # Get image dimensions and basic info
+        height, width, channels = image.shape
+        print(f"Dimensões da imagem: {width}x{height}, {channels} canais")
         
         # Convert from BGR to RGB (OpenCV loads as BGR)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -154,10 +163,33 @@ class DataProcessor(QObject):
         # Extract features for each attribute
         features = []
         
-        for attr in rgb_attributes:
+        # Verificar distribuição de cores na imagem para diagnóstico
+        r_avg = np.mean(image[:,:,0])
+        g_avg = np.mean(image[:,:,1])
+        b_avg = np.mean(image[:,:,2])
+        print(f"Médias RGB na imagem: R={r_avg:.1f}, G={g_avg:.1f}, B={b_avg:.1f}")
+        
+        for i, attr in enumerate(rgb_attributes):
+            # Verificar se o atributo tem todos os campos necessários
+            required_fields = ['name', 'r_min', 'r_max', 'g_min', 'g_max', 'b_min', 'b_max']
+            for field in required_fields:
+                if field not in attr:
+                    raise ValueError(f"Atributo {i} não possui o campo obrigatório '{field}'")
+            
             # Create mask for the RGB range
             lower_bound = np.array([attr['r_min'], attr['g_min'], attr['b_min']])
             upper_bound = np.array([attr['r_max'], attr['g_max'], attr['b_max']])
+            
+            print(f"Aplicando atributo {attr['name']}: RGB faixa [{lower_bound}] a [{upper_bound}]")
+            
+            # Verificar se os limites são válidos
+            if np.any(lower_bound >= upper_bound):
+                print(f"ALERTA: Limites inválidos para atributo {attr['name']}: [{lower_bound}] a [{upper_bound}]")
+                # Corrigir automaticamente limites problemáticos
+                for j in range(3):
+                    if lower_bound[j] >= upper_bound[j]:
+                        upper_bound[j] = min(255, lower_bound[j] + 1)
+                print(f"Limites corrigidos: [{lower_bound}] a [{upper_bound}]")
             
             mask = cv2.inRange(image, lower_bound, upper_bound)
             
@@ -166,8 +198,26 @@ class DataProcessor(QObject):
             total_pixels = image.shape[0] * image.shape[1]
             percentage = pixel_count / total_pixels
             
+            print(f"Atributo {attr['name']}: {pixel_count} pixels ({percentage*100:.2f}%)")
+            
+            # Adicionar característica
             features.append(percentage)
+            
+            # Verificar se temos pelo menos algum pixel válido
+            if pixel_count == 0:
+                print(f"ALERTA: Nenhum pixel encontrado para o atributo {attr['name']}!")
         
+        # Verificar se todas as características são iguais (problema potencial)
+        if len(features) > 1 and all(f == features[0] for f in features):
+            print("ALERTA: Todas as características têm o mesmo valor! Isso causará problemas na classificação.")
+            # Tentar adicionar alguma variação para evitar resultados idênticos
+            if features[0] == 0:
+                # Se todas forem zero, adicionar pequenos valores diferentes
+                for i in range(len(features)):
+                    features[i] = 0.0001 * (i + 1)
+                print(f"Características ajustadas para evitar valores idênticos: {features}")
+        
+        print(f"Características extraídas: {features}")
         return features
     
     def extract_image_features(self, image_path, rgb_attributes):

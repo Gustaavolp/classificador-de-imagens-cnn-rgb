@@ -5,6 +5,7 @@ from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import confusion_matrix
+from tensorflow.keras.callbacks import EarlyStopping
 
 class RGBFeatureNet:
     """Rede neural para classificação baseada em características RGB."""
@@ -13,8 +14,9 @@ class RGBFeatureNet:
         self.model = None
         self.scaler = StandardScaler()
         self.class_names = None
+        self.input_shape = None
     
-    def build_model(self, input_shape, num_classes, layers=3, neurons=16, 
+    def build_model(self, input_shape, num_classes, layers=3, neurons=32, 
                    activation='relu', learning_rate=0.001, optimizer='adam'):
         """
         Construir o modelo de rede neural.
@@ -31,27 +33,35 @@ class RGBFeatureNet:
         Returns:
             Modelo Keras compilado
         """
+        print(f"Construindo modelo com: input_shape={input_shape}, num_classes={num_classes}, layers={layers}, neurons={neurons}")
+        
+        # Armazenar o formato de entrada para uso futuro
+        self.input_shape = input_shape
+        
         model = Sequential()
         
-        # Camada de entrada
-        model.add(Dense(neurons, activation=activation, input_shape=(input_shape,)))
-        model.add(Dropout(0.2))
+        # Camada de entrada - aumentar o tamanho para lidar com dados mais complexos
+        model.add(Dense(neurons*2, activation=activation, input_shape=(input_shape,)))
+        model.add(Dropout(0.3))  # Aumentar dropout para reduzir overfitting
         
-        # Camadas ocultas
-        for _ in range(layers - 1):
-            model.add(Dense(neurons, activation=activation))
+        # Camadas ocultas - usar tamanho decrescente para criar um funil
+        for i in range(layers - 1):
+            layer_size = neurons * 2 // (i+1)  # Reduzir tamanho gradualmente
+            layer_size = max(num_classes*2, layer_size)  # Garantir tamanho mínimo
+            
+            model.add(Dense(layer_size, activation=activation))
             model.add(Dropout(0.2))
         
-        # Camada de saída
+        # Camada de saída com softmax
         model.add(Dense(num_classes, activation='softmax'))
         
-        # Configurar otimizador
+        # Configurar otimizador com clipping para evitar explosão de gradientes
         if optimizer.lower() == 'adam':
-            opt = Adam(learning_rate=learning_rate)
+            opt = Adam(learning_rate=learning_rate, clipnorm=1.0)
         elif optimizer.lower() == 'sgd':
-            opt = SGD(learning_rate=learning_rate)
+            opt = SGD(learning_rate=learning_rate, clipnorm=1.0, momentum=0.9)
         else:
-            opt = RMSprop(learning_rate=learning_rate)
+            opt = RMSprop(learning_rate=learning_rate, clipnorm=1.0)
         
         # Compilar modelo
         model.compile(
@@ -60,7 +70,46 @@ class RGBFeatureNet:
             metrics=['accuracy']
         )
         
+        # Resumo do modelo
+        model.summary()
+        
         return model
+    
+    def verify_attributes(self, rgb_attributes):
+        """
+        Verificar se os atributos RGB são válidos.
+        
+        Args:
+            rgb_attributes: Lista de atributos RGB a verificar
+            
+        Returns:
+            True se válidos, False caso contrário
+        """
+        if not rgb_attributes or len(rgb_attributes) == 0:
+            print("ERRO: Nenhum atributo RGB fornecido")
+            return False
+            
+        for i, attr in enumerate(rgb_attributes):
+            # Verificar campos obrigatórios
+            required_fields = ['name', 'r_min', 'r_max', 'g_min', 'g_max', 'b_min', 'b_max']
+            for field in required_fields:
+                if field not in attr:
+                    print(f"ERRO: Atributo {i} não tem o campo obrigatório '{field}'")
+                    return False
+                    
+            # Verificar intervalos RGB válidos
+            if attr['r_min'] >= attr['r_max']:
+                print(f"ERRO: Atributo {attr['name']} tem r_min >= r_max ({attr['r_min']} >= {attr['r_max']})")
+                return False
+            if attr['g_min'] >= attr['g_max']:
+                print(f"ERRO: Atributo {attr['name']} tem g_min >= g_max ({attr['g_min']} >= {attr['g_max']})")
+                return False
+            if attr['b_min'] >= attr['b_max']:
+                print(f"ERRO: Atributo {attr['name']} tem b_min >= b_max ({attr['b_min']} >= {attr['b_max']})")
+                return False
+                
+        print(f"Verificação de atributos RGB: {len(rgb_attributes)} atributos válidos")
+        return True
     
     def train(self, data, params):
         """
@@ -73,10 +122,34 @@ class RGBFeatureNet:
         Returns:
             Dicionário com resultados do treinamento
         """
+        # Verificar se temos dados de RGB
+        if 'rgb_attributes' in params:
+            rgb_attributes = params['rgb_attributes']
+            if not self.verify_attributes(rgb_attributes):
+                print("ALERTA: Atributos RGB inválidos, isso pode afetar o treinamento")
+        
+        # Debug: Verificar formato dos dados
+        print("Shape dos dados de treinamento:")
         X_train = data['X_train']
         y_train = data['y_train']
         X_test = data['X_test']
         y_test = data['y_test']
+        
+        print(f"X_train: {X_train.shape}, y_train: {y_train.shape}")
+        print(f"X_test: {X_test.shape}, y_test: {y_test.shape}")
+        
+        # Verificar se temos features suficientes
+        if X_train.shape[1] <= 1:
+            print("ALERTA: Apenas uma característica disponível. Isso pode limitar o desempenho do modelo.")
+            
+        # Verificar valores em X_train
+        print(f"X_train - min: {X_train.min()}, max: {X_train.max()}, média: {X_train.mean()}")
+        
+        # Verificar distribuição das classes
+        print("Distribuição das classes:")
+        for i in range(y_train.shape[1]):
+            count = np.sum(y_train[:, i])
+            print(f"Classe {i}: {count} exemplos ({count/len(y_train)*100:.1f}%)")
         
         # Armazenar os nomes das classes originais
         if 'class_names' in data:
@@ -87,39 +160,90 @@ class RGBFeatureNet:
             self.class_names = [f"Classe {i+1}" for i in range(y_train.shape[1])]
             print(f"Nomes de classes não fornecidos, usando valores genéricos: {self.class_names}")
         
-        # Escalonar características
-        X_train = self.scaler.fit_transform(X_train)
-        X_test = self.scaler.transform(X_test)
+        # Escalonar características usando scaler
+        print("Escalonando características...")
+        X_train_scaled = self.scaler.fit_transform(X_train)
+        X_test_scaled = self.scaler.transform(X_test)
+        
+        # Debug: verificar valores após escalonamento
+        print(f"X_train_scaled - min: {X_train_scaled.min()}, max: {X_train_scaled.max()}, média: {X_train_scaled.mean()}")
+        
+        # Obter hiperparâmetros
+        layers = params.get('layers', 3)
+        neurons = params.get('neurons', 32)
+        activation = params.get('activation', 'relu')
+        learning_rate = params.get('learning_rate', 0.001)
+        optimizer = params.get('optimizer', 'adam')
+        epochs = params.get('epochs', 100)
+        batch_size = params.get('batch_size', 16)
+        
+        # Ajustar hiperparâmetros baseado no tamanho dos dados
+        if len(X_train) < 50:
+            print("Conjunto de dados pequeno, ajustando hiperparâmetros...")
+            batch_size = min(batch_size, max(4, len(X_train) // 5))
+            print(f"Batch size ajustado para {batch_size}")
         
         # Construir modelo
         self.model = self.build_model(
             input_shape=X_train.shape[1],
             num_classes=y_train.shape[1],
-            layers=params.get('layers', 3),
-            neurons=params.get('neurons', 16),
-            activation=params.get('activation', 'relu'),
-            learning_rate=params.get('learning_rate', 0.001),
-            optimizer=params.get('optimizer', 'adam')
+            layers=layers,
+            neurons=neurons,
+            activation=activation,
+            learning_rate=learning_rate,
+            optimizer=optimizer
+        )
+        
+        # Configurar early stopping para evitar overfitting
+        early_stopping = EarlyStopping(
+            monitor='val_loss',
+            patience=10,
+            restore_best_weights=True,
+            verbose=1
         )
         
         # Treinar modelo
+        print(f"Iniciando treinamento com {epochs} épocas, batch_size={batch_size}")
         history = self.model.fit(
-            X_train, y_train,
-            validation_data=(X_test, y_test),
-            epochs=params.get('epochs', 100),
-            batch_size=32,
+            X_train_scaled, y_train,
+            validation_data=(X_test_scaled, y_test),
+            epochs=epochs,
+            batch_size=batch_size,
+            callbacks=[early_stopping],
             verbose=1
         )
         
         # Avaliar modelo
-        _, accuracy = self.model.evaluate(X_test, y_test, verbose=0)
+        print("Avaliando modelo no conjunto de teste...")
+        loss, accuracy = self.model.evaluate(X_test_scaled, y_test, verbose=0)
+        print(f"Acurácia final: {accuracy:.4f}, Loss: {loss:.4f}")
         
-        # Gerar matriz de confusão
-        y_pred = self.model.predict(X_test)
+        # Verificar predições no conjunto de teste
+        print("Fazendo predições no conjunto de teste...")
+        y_pred = self.model.predict(X_test_scaled)
+        
+        # Verificar valores das predições
+        print(f"Predições - min: {y_pred.min()}, max: {y_pred.max()}, média: {y_pred.mean()}")
+        
+        # Verificar se temos uma distribuição razoável nas predições (não apenas um valor constante)
+        pred_stds = np.std(y_pred, axis=0)
+        print(f"Desvio padrão por classe: {pred_stds}")
+        if np.all(pred_stds < 0.001):
+            print("ALERTA: Baixa variação nas predições. O modelo pode não estar aprendendo adequadamente.")
+        
         y_pred_classes = np.argmax(y_pred, axis=1)
         y_true_classes = np.argmax(y_test, axis=1)
         
+        print("Verificando distribuição das previsões:")
+        unique, counts = np.unique(y_pred_classes, return_counts=True)
+        for cls, count in zip(unique, counts):
+            class_name = self.class_names[cls] if cls < len(self.class_names) else f"Classe {cls}"
+            print(f"{class_name}: {count} predições ({count/len(y_pred_classes)*100:.1f}%)")
+        
+        # Gerar matriz de confusão
         cm = confusion_matrix(y_true_classes, y_pred_classes)
+        print("Matriz de confusão:")
+        print(cm)
         
         # Verificar se a matriz de confusão tem a dimensão correta
         if cm.shape[0] != len(self.class_names):
@@ -133,9 +257,11 @@ class RGBFeatureNet:
             'model': self.model,
             'history': history.history,
             'accuracy': accuracy,
+            'loss': loss,
             'scaler': self.scaler,
             'class_names': self.class_names,
-            'confusion_matrix': cm
+            'confusion_matrix': cm,
+            'input_shape': X_train.shape[1]
         }
     
     def classify_image(self, image_path, model, rgb_attributes):
@@ -152,28 +278,69 @@ class RGBFeatureNet:
         """
         from utils.data_processing import DataProcessor
         
+        print(f"Classificando imagem: {image_path}")
+        
+        # Verificar se os atributos RGB são válidos
+        if not self.verify_attributes(rgb_attributes):
+            print("ALERTA: Atributos RGB inválidos, isso pode afetar a classificação")
+        
+        # Comparar com o formato esperado pelo modelo
+        if hasattr(self, 'input_shape') and self.input_shape is not None:
+            if len(rgb_attributes) != self.input_shape:
+                print(f"ALERTA: Número de atributos RGB ({len(rgb_attributes)}) não corresponde ao formato de entrada do modelo ({self.input_shape})")
+        
         # Extrair características
+        print("Extraindo características...")
         data_processor = DataProcessor()
         features = data_processor.extract_image_features(image_path, rgb_attributes)
         
-        # Escalonar características
+        print(f"Características extraídas: {features.shape}")
+        print(f"Valores: {features}")
+        
+        # Escalonar características usando o mesmo scaler do treinamento
         if hasattr(self, 'scaler') and self.scaler is not None:
-            features = self.scaler.transform(features)
+            print("Escalonando características...")
+            features_scaled = self.scaler.transform(features)
+            print(f"Características escalonadas: {features_scaled}")
+        else:
+            print("ALERTA: Não foi encontrado um scaler, usando características não escalonadas")
+            features_scaled = features
         
         # Fazer predição
-        prediction = model.predict(features)[0]
+        print("Realizando predição...")
+        prediction = model.predict(features_scaled)[0]
         
-        # Obter nomes das classes se não estiverem já armazenados
-        if self.class_names is None and hasattr(model, 'output_names'):
-            self.class_names = model.output_names
+        print(f"Valores de predição: {prediction}")
+        print(f"Soma das predições: {np.sum(prediction)}")
         
-        # Criar dicionário de resultado
-        if self.class_names:
-            predicted_class = self.class_names[np.argmax(prediction)]
-            probabilities = {cls: float(prob) for cls, prob in zip(self.class_names, prediction)}
+        # Obter nomes das classes
+        if self.class_names is None:
+            if hasattr(model, 'output_names'):
+                self.class_names = model.output_names
+            else:
+                # Se não temos nomes das classes, criar nomes genéricos
+                self.class_names = [f"Classe {i+1}" for i in range(len(prediction))]
+        
+        # Criar dicionário de resultado com todas as probabilidades
+        predicted_class_idx = np.argmax(prediction)
+        
+        # Verificar se o índice está dentro dos limites
+        if predicted_class_idx >= len(self.class_names):
+            print(f"ERRO: Índice de classe prevista ({predicted_class_idx}) fora dos limites dos nomes de classe ({len(self.class_names)})")
+            predicted_class = f"Classe {predicted_class_idx+1}"
         else:
-            predicted_class = f"Classe {np.argmax(prediction)}"
-            probabilities = {f"Classe {i}": float(prob) for i, prob in enumerate(prediction)}
+            predicted_class = self.class_names[predicted_class_idx]
+        
+        # Criar dicionário de probabilidades
+        probabilities = {}
+        for i, prob in enumerate(prediction):
+            if i < len(self.class_names):
+                probabilities[self.class_names[i]] = float(prob)
+            else:
+                probabilities[f"Classe {i+1}"] = float(prob)
+        
+        print(f"Classe prevista: {predicted_class} (índice {predicted_class_idx})")
+        print(f"Probabilidades: {probabilities}")
         
         return {
             'class': predicted_class,

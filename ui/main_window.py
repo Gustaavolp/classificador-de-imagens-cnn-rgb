@@ -1748,17 +1748,51 @@ class MainWindow(QMainWindow):
     def save_rgb_attributes(self):
         """Save the defined RGB attributes."""
         attributes = []
+        
+        # Verificar se temos seletores RGB
+        if not hasattr(self, 'rgb_selectors_layout') or self.rgb_selectors_layout.count() == 0:
+            QMessageBox.warning(self, "Sem Seletores RGB", 
+                              "Não há seletores RGB definidos. Por favor, altere para o modo RGB e adicione classes primeiro.")
+            return
+        
+        # Coletar todos os atributos dos seletores
         for i in range(self.rgb_selectors_layout.count()):
             selector_widget = self.rgb_selectors_layout.itemAt(i).widget()
             if selector_widget:
+                # Verificar se o nome é válido
+                name = selector_widget.name_edit.text().strip()
+                if not name:
+                    name = f"Atributo {i+1}"
+                    self.log_widget.log(f"Nome vazio para o seletor {i+1}, usando nome padrão", level="warning")
+                
+                # Obter valores dos sliders e garantir que os intervalos sejam válidos
+                r_min = selector_widget.r_slider_min()
+                r_max = selector_widget.r_slider_max()
+                g_min = selector_widget.g_slider_min()
+                g_max = selector_widget.g_slider_max()
+                b_min = selector_widget.b_slider_min()
+                b_max = selector_widget.b_slider_max()
+                
+                # Corrigir intervalos se necessário
+                if r_min >= r_max:
+                    r_max = min(255, r_min + 1)
+                    self.log_widget.log(f"Intervalo R inválido para {name}, corrigido", level="warning")
+                if g_min >= g_max:
+                    g_max = min(255, g_min + 1)
+                    self.log_widget.log(f"Intervalo G inválido para {name}, corrigido", level="warning")
+                if b_min >= b_max:
+                    b_max = min(255, b_min + 1)
+                    self.log_widget.log(f"Intervalo B inválido para {name}, corrigido", level="warning")
+                
+                # Criar atributo com valores validados
                 attribute = {
-                    'name': selector_widget.name_edit.text(),
-                    'r_min': selector_widget.r_slider_min(),
-                    'r_max': selector_widget.r_slider_max(),
-                    'g_min': selector_widget.g_slider_min(),
-                    'g_max': selector_widget.g_slider_max(),
-                    'b_min': selector_widget.b_slider_min(),
-                    'b_max': selector_widget.b_slider_max(),
+                    'name': name,
+                    'r_min': r_min,
+                    'r_max': r_max,
+                    'g_min': g_min,
+                    'g_max': g_max,
+                    'b_min': b_min,
+                    'b_max': b_max,
                     'r_value': selector_widget.r_slider.value(),
                     'g_value': selector_widget.g_slider.value(),
                     'b_value': selector_widget.b_slider.value(),
@@ -1766,12 +1800,61 @@ class MainWindow(QMainWindow):
                 }
                 attributes.append(attribute)
         
-        self.rgb_attributes = attributes
-        self.log_widget.log(f"Saved {len(attributes)} RGB attributes")
+        # Verificar se temos atributos suficientes
+        if len(attributes) < 2:
+            if QMessageBox.question(self, "Poucos Atributos", 
+                                  "Você definiu menos de 2 atributos RGB. Isso pode não ser suficiente para uma boa classificação. Deseja continuar mesmo assim?",
+                                  QMessageBox.Yes | QMessageBox.No) == QMessageBox.No:
+                return
         
-        # Notify user
-        QMessageBox.information(self, "Attributes Saved", 
-                               f"Successfully saved {len(attributes)} RGB attributes.")
+        # Verificar se os atributos são distintos
+        unique_values = set()
+        for attr in attributes:
+            attr_key = (attr['r_min'], attr['r_max'], attr['g_min'], attr['g_max'], attr['b_min'], attr['b_max'])
+            unique_values.add(attr_key)
+        
+        if len(unique_values) < len(attributes):
+            if QMessageBox.question(self, "Atributos Duplicados", 
+                                  "Existem atributos RGB com os mesmos valores. Isso pode causar problemas na classificação. Deseja continuar mesmo assim?",
+                                  QMessageBox.Yes | QMessageBox.No) == QMessageBox.No:
+                return
+        
+        # Verificar se algum atributo tem intervalo muito pequeno
+        narrow_intervals = []
+        for attr in attributes:
+            r_range = attr['r_max'] - attr['r_min']
+            g_range = attr['g_max'] - attr['g_min']
+            b_range = attr['b_max'] - attr['b_min']
+            
+            if min(r_range, g_range, b_range) < 5:
+                narrow_intervals.append(attr['name'])
+        
+        if narrow_intervals:
+            narrow_msg = ", ".join(narrow_intervals)
+            if QMessageBox.question(self, "Intervalos Muito Estreitos", 
+                                  f"Os seguintes atributos têm intervalos muito estreitos: {narrow_msg}. Isso pode dificultar a detecção de pixels. Deseja continuar?",
+                                  QMessageBox.Yes | QMessageBox.No) == QMessageBox.No:
+                return
+        
+        # Tudo passou nas verificações, salvar os atributos
+        self.rgb_attributes = attributes
+        self.log_widget.log(f"Salvos {len(attributes)} atributos RGB")
+        
+        # Exibir resumo dos atributos no log
+        for attr in attributes:
+            self.log_widget.log(f"Atributo: {attr['name']}, R: {attr['r_min']}-{attr['r_max']}, G: {attr['g_min']}-{attr['g_max']}, B: {attr['b_min']}-{attr['b_max']}")
+        
+        # Atualizar sumário de configuração
+        self.update_config_summary()
+        
+        # Notificar o usuário
+        QMessageBox.information(self, "Atributos Salvos", 
+                               f"Foram salvos {len(attributes)} atributos RGB com sucesso.")
+        
+        # Habilitar botão de treinamento se tivermos pelo menos 2 classes selecionadas
+        if hasattr(self, 'class_data') and len(self.class_data) >= 2:
+            if hasattr(self, 'train_btn'):
+                self.train_btn.setEnabled(True)
     
     def save_model(self):
         """Save the trained model."""
