@@ -1888,86 +1888,188 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Model", "No trained model to save.")
             return
         
-        # Obter caminho do arquivo através do diálogo de salvamento do Windows
+        # Determinar a extensão de arquivo apropriada com base no tipo de modelo
+        is_cnn = self.cnn_btn.isChecked()
+        use_direct_classification = False
+        
+        # Verificar se estamos usando classificação direta
+        if hasattr(self, 'rgb_feature_net') and hasattr(self.rgb_feature_net, 'use_direct_classification'):
+            use_direct_classification = self.rgb_feature_net.use_direct_classification
+        
+        # Definir filtro e extensão de arquivo baseado no tipo
+        if is_cnn:
+            file_filter = "Model Files (*.h5)"
+            default_ext = ".h5"
+        elif use_direct_classification:
+            file_filter = "Model Files (*.json)"
+            default_ext = ".json"
+        else:
+            file_filter = "Model Files (*.h5 *.json)"
+            default_ext = ".h5"
+        
+        # Obter caminho do arquivo através do diálogo de salvamento
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Salvar Modelo", "", "Model Files (*.h5)"
+            self, "Salvar Modelo", "", file_filter
         )
         
         if file_path:
             try:
-                # Determinar tipo de modelo baseado nos botões
-                is_cnn = self.cnn_btn.isChecked()
+                # Garantir que a extensão esteja presente no caminho
+                if not file_path.lower().endswith(default_ext):
+                    file_path += default_ext
+                    
+                self.log_widget.log(f"Salvando modelo em: {file_path}")
+                
+                # Adicionar informações adicionais baseadas no tipo de modelo
                 model_type = "Convolutional Neural Network" if is_cnn else "RGB Feature Network"
                 
                 # Preparar informações do modelo para salvar
                 model_info = {
                     'model': self.current_model,
-                    'attributes': self.rgb_attributes if hasattr(self, 'rgb_attributes') else [],
-                    'type': model_type
+                    'type': model_type,
+                    'attributes': self.rgb_attributes if hasattr(self, 'rgb_attributes') else []
                 }
                 
-                # Se for um modelo RGB, incluir o scaler
-                if not is_cnn and hasattr(self, 'rgb_feature_net') and hasattr(self.rgb_feature_net, 'scaler'):
-                    model_info['scaler'] = self.rgb_feature_net.scaler
-                    self.log_widget.log("Including scaler in saved model")
+                # Adicionar informações específicas do modelo RGB
+                if not is_cnn:
+                    # Incluir os nomes das classes
+                    if hasattr(self, 'class_data') and self.class_data:
+                        model_info['class_names'] = list(self.class_data.keys())
+                    elif hasattr(self, 'rgb_feature_net') and hasattr(self.rgb_feature_net, 'class_names'):
+                        model_info['class_names'] = self.rgb_feature_net.class_names
+                        
+                    # Se for um modelo RGB, incluir o scaler
+                    if hasattr(self, 'rgb_feature_net') and hasattr(self.rgb_feature_net, 'scaler'):
+                        model_info['scaler'] = self.rgb_feature_net.scaler
+                        
+                    # Verificar se temos pesos de atributos
+                    if hasattr(self, 'rgb_feature_net'):
+                        if hasattr(self.rgb_feature_net, 'feature_weights'):
+                            model_info['feature_weights'] = self.rgb_feature_net.feature_weights
+                        if hasattr(self.rgb_feature_net, 'feature_means'):
+                            model_info['feature_means'] = self.rgb_feature_net.feature_means
+                            
+                    # Indicar uso de classificação direta
+                    model_info['use_direct_classification'] = use_direct_classification
+                
+                # Log detalhado
+                self.log_widget.log(f"Tipo de modelo: {model_type}")
+                self.log_widget.log(f"Extensão de arquivo: {default_ext}")
+                if 'class_names' in model_info:
+                    self.log_widget.log(f"Classes incluídas: {model_info['class_names']}")
                 
                 # Salvar o modelo
                 self.model_utils.save_model(model_info, file_path)
                 self.log_widget.log(f"Model saved to {file_path}")
                 QMessageBox.information(self, "Model Saved", f"Model successfully saved to {file_path}")
             except Exception as e:
-                self.handle_error(f"Error saving model: {str(e)}")
+                error_msg = f"Error saving model: {str(e)}"
+                self.log_widget.log(error_msg, level="error")
+                QMessageBox.critical(self, "Error", error_msg)
+                import traceback
+                traceback.print_exc()
     
     def load_model(self):
         """Load a trained model."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Load Model", "models/", "Model Files (*.h5)"
+        # Oferecer filtros para diferentes tipos de modelos
+        file_filter = "Model Files (*.h5 *.json);;H5 Models (*.h5);;JSON Models (*.json);;All Files (*.*)"
+        
+        file_path, selected_filter = QFileDialog.getOpenFileName(
+            self, "Carregar Modelo", "", file_filter
         )
         
         if file_path:
             try:
-                model_info = self.model_utils.load_model(file_path)
-                self.current_model = model_info['model']
+                self.log_widget.log(f"Tentando carregar modelo de: {file_path}")
                 
-                # Extract and store RGB attributes and model type if available
-                self.rgb_attributes = model_info.get('attributes', [])
-                self.loaded_model_type = model_info.get('type', "Unknown Model Type")
+                # Desativar temporariamente a interface
+                self.setEnabled(False)
+                QApplication.processEvents()
                 
-                # Se for um modelo RGB, garantir que o scaler está inicializado
-                if "RGB Feature" in self.loaded_model_type:
-                    # Verificar se temos um scaler no model_info
-                    if 'scaler' in model_info and model_info['scaler'] is not None:
-                        # Usar o scaler que foi salvo com o modelo
-                        self.rgb_feature_net.scaler = model_info['scaler']
-                        self.log_widget.log("Scaler loaded from model file")
+                # Carregar o modelo com melhor tratamento de erros
+                try:
+                    model_info = self.model_utils.load_model(file_path)
+                    self.current_model = model_info.get('model')
+                    
+                    # Verificar se o modelo foi carregado corretamente
+                    if self.current_model is None:
+                        raise ValueError("O carregamento falhou - modelo retornado é None")
+                    
+                    # Extract and store attributes based on model type
+                    if 'attributes' in model_info and model_info['attributes']:
+                        self.rgb_attributes = model_info['attributes']
+                        self.log_widget.log(f"Atributos RGB carregados: {len(self.rgb_attributes)}")
+                    
+                    # Determinar e configurar tipo de modelo
+                    self.loaded_model_type = model_info.get('type', "Unknown Model Type")
+                    
+                    # Configurar a interface para o tipo de modelo carregado
+                    if "Convolutional" in self.loaded_model_type or self.loaded_model_type == "CNN":
+                        self.log_widget.log("Modelo CNN detectado, configurando interface")
+                        self.set_model_type("CNN")
                     else:
-                        # Se não temos um scaler, criamos um novo e informamos o usuário
-                        from sklearn.preprocessing import StandardScaler
-                        self.rgb_feature_net.scaler = StandardScaler()
-                        self.log_widget.log("Warning: No scaler found in model, a new one will be created", level="warning")
+                        self.log_widget.log("Modelo RGB detectado, configurando interface")
+                        self.set_model_type("RGB")
+                    
+                    # Check for RGB-specific properties
+                    if "RGB" in self.loaded_model_type:
+                        # If it's an RGB model, ensure we have a model instance to work with
+                        if not hasattr(self, 'rgb_feature_net'):
+                            from models.rgb_net import RGBFeatureNet
+                            self.rgb_feature_net = RGBFeatureNet()
                         
-                        # Se tivermos atributos RGB, podemos inicializar o scaler com dados de exemplo
-                        if self.rgb_attributes and len(self.rgb_attributes) > 0:
-                            import numpy as np
-                            # Criar dados de exemplo baseados no número de atributos
-                            example_data = np.random.rand(10, len(self.rgb_attributes))
-                            self.rgb_feature_net.scaler.fit(example_data)
-                            self.log_widget.log("Scaler initialized with example data")
-                
-                # Update UI
-                self.model_path_label.setText(file_path)
-                self.classify_btn.setEnabled(True)
-                
-                # Log message with model type
-                self.log_widget.log(f"Loaded {self.loaded_model_type} from {file_path}")
-                
-                # Show message about model type
-                if "RGB Feature" in self.loaded_model_type:
-                    if not self.rgb_attributes:
-                        self.log_widget.log("Warning: No RGB attributes found in model", level="warning")
-                
-            except Exception as e:
-                self.handle_error(f"Error loading model: {str(e)}")
+                        # Configure RGB features network with loaded parameters
+                        if 'use_direct_classification' in model_info:
+                            self.rgb_feature_net.use_direct_classification = model_info['use_direct_classification']
+                            self.log_widget.log(f"Configurado modo de classificação: {'Direto' if model_info['use_direct_classification'] else 'Rede Neural'}")
+                        
+                        # Copy feature weights if available
+                        if 'feature_weights' in model_info and model_info['feature_weights'] is not None:
+                            self.rgb_feature_net.feature_weights = model_info['feature_weights']
+                            self.log_widget.log("Pesos de características carregados")
+                            
+                        # Copy feature means if available
+                        if 'feature_means' in model_info and model_info['feature_means'] is not None:
+                            self.rgb_feature_net.feature_means = model_info['feature_means']
+                            self.log_widget.log("Médias de características carregadas")
+                            
+                        # Set up class names
+                        if 'class_names' in model_info and model_info['class_names']:
+                            self.rgb_feature_net.class_names = model_info['class_names']
+                            self.log_widget.log(f"Classes carregadas: {model_info['class_names']}")
+                            
+                            # Attempt to reconstruct class_data for interface
+                            if not hasattr(self, 'class_data') or not self.class_data:
+                                self.class_data = {class_name: 0 for class_name in model_info['class_names']}
+                                self.log_widget.log("Reconstruído class_data para interface")
+                                self.update_selected_classes_list()
+                        
+                        # Set up scaler
+                        if 'scaler' in model_info and model_info['scaler'] is not None:
+                            self.rgb_feature_net.scaler = model_info['scaler']
+                            self.log_widget.log("Scaler carregado do modelo")
+                    
+                    # Update UI
+                    self.model_path_label.setText(file_path)
+                    if hasattr(self, 'classify_btn'):
+                        self.classify_btn.setEnabled(True)
+                    
+                    self.log_widget.log(f"Modelo carregado com sucesso: {self.loaded_model_type}")
+                    QMessageBox.information(self, "Modelo Carregado", 
+                                            f"Modelo carregado com sucesso!\nTipo: {self.loaded_model_type}")
+                    
+                except Exception as e:
+                    # Mostrar erro detalhado
+                    error_msg = f"Erro ao carregar modelo: {str(e)}"
+                    self.log_widget.log(error_msg, level="error")
+                    QMessageBox.critical(self, "Erro de Carregamento", 
+                                         f"Falha ao carregar o modelo.\nErro: {str(e)}\n\n"
+                                         f"Verifique se o arquivo ({file_path}) é um modelo válido.")
+                    import traceback
+                    traceback.print_exc()
+            finally:
+                # Reabilitar a interface
+                self.setEnabled(True)
     
     def select_image(self):
         """Select an image for classification."""
