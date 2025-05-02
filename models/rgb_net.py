@@ -87,104 +87,28 @@ class RGBFeatureNet:
             self.class_names = [f"Classe {i+1}" for i in range(y_train.shape[1])]
             print(f"Nomes de classes não fornecidos, usando valores genéricos: {self.class_names}")
         
-        # Verificar se temos dados suficientes
-        print(f"Dimensões dos dados - X_train: {X_train.shape}, X_test: {X_test.shape}")
-        print(f"Dimensões das labels - y_train: {y_train.shape}, y_test: {y_test.shape}")
+        # Escalonar características
+        X_train = self.scaler.fit_transform(X_train)
+        X_test = self.scaler.transform(X_test)
         
-        # Verificar valores extremos ou NaN
-        if np.isnan(X_train).any() or np.isnan(X_test).any():
-            print("AVISO: Encontrados valores NaN nos dados!")
-            # Substituir NaN por zeros
-            X_train = np.nan_to_num(X_train)
-            X_test = np.nan_to_num(X_test)
-        
-        # Verificar range dos dados
-        print(f"Range de valores em X_train: Min={X_train.min()}, Max={X_train.max()}")
-        
-        # Escalonar características com mais robustez
-        try:
-            # Tentar ajustar o scaler aos dados
-            X_train = self.scaler.fit_transform(X_train)
-            X_test = self.scaler.transform(X_test)
-            print("Dados escalados com sucesso")
-        except Exception as e:
-            print(f"Erro ao escalar dados: {e}")
-            # Fallback para escalonamento manual se StandardScaler falhar
-            if X_train.shape[1] > 0:  # Verificar se temos características
-                # Escalonar manualmente para [0,1]
-                x_min = X_train.min(axis=0)
-                x_max = X_train.max(axis=0)
-                
-                # Evitar divisão por zero
-                range_values = x_max - x_min
-                range_values[range_values == 0] = 1.0
-                
-                X_train = (X_train - x_min) / range_values
-                X_test = np.clip((X_test - x_min) / range_values, 0, 1)
-                print("Dados escalados manualmente")
-        
-        # Construir modelo com regularização para evitar overfitting
-        neurons = params.get('neurons', 16)
-        activation = params.get('activation', 'relu')
-        
-        self.model = Sequential()
-        
-        # Camada de entrada com regularização
-        self.model.add(Dense(neurons, 
-                             activation=activation, 
-                             input_shape=(X_train.shape[1],),
-                             kernel_regularizer=tf.keras.regularizers.l2(0.001)))
-        self.model.add(Dropout(0.3))  # Aumento do dropout para reduzir overfitting
-        
-        # Camadas ocultas
-        for _ in range(params.get('layers', 3) - 1):
-            self.model.add(Dense(neurons, 
-                                activation=activation,
-                                kernel_regularizer=tf.keras.regularizers.l2(0.001)))
-            self.model.add(Dropout(0.3))
-        
-        # Camada de saída
-        self.model.add(Dense(y_train.shape[1], activation='softmax'))
-        
-        # Configurar otimizador com menor learning rate para maior estabilidade
-        learning_rate = params.get('learning_rate', 0.001) * 0.5  # Reduzir para maior estabilidade
-        
-        if params.get('optimizer', 'adam').lower() == 'adam':
-            opt = Adam(learning_rate=learning_rate)
-        elif params.get('optimizer', 'adam').lower() == 'sgd':
-            opt = SGD(learning_rate=learning_rate, momentum=0.9)  # Adicionar momentum
-        else:
-            opt = RMSprop(learning_rate=learning_rate, rho=0.9)
-        
-        # Compilar modelo
-        self.model.compile(
-            optimizer=opt,
-            loss='categorical_crossentropy',
-            metrics=['accuracy']
+        # Construir modelo
+        self.model = self.build_model(
+            input_shape=X_train.shape[1],
+            num_classes=y_train.shape[1],
+            layers=params.get('layers', 3),
+            neurons=params.get('neurons', 16),
+            activation=params.get('activation', 'relu'),
+            learning_rate=params.get('learning_rate', 0.001),
+            optimizer=params.get('optimizer', 'adam')
         )
-        
-        # Resumo do modelo
-        self.model.summary()
-        
-        # Early stopping para evitar overfitting
-        early_stop = tf.keras.callbacks.EarlyStopping(
-            monitor='val_accuracy',
-            patience=10,
-            restore_best_weights=True
-        )
-        
-        # Reduzir batch size para maior estabilidade
-        batch_size = min(32, X_train.shape[0] // 4) if X_train.shape[0] > 4 else 2
-        print(f"Usando batch size: {batch_size}")
         
         # Treinar modelo
         history = self.model.fit(
             X_train, y_train,
             validation_data=(X_test, y_test),
             epochs=params.get('epochs', 100),
-            batch_size=batch_size,
-            verbose=1,
-            callbacks=[early_stop]
+            batch_size=32,
+            verbose=1
         )
         
         # Avaliar modelo
@@ -204,11 +128,6 @@ class RGBFeatureNet:
             adjusted_class_names = [f"Classe {i+1}" for i in range(cm.shape[0])]
             print(f"Ajustando nomes de classes para: {adjusted_class_names}")
             self.class_names = adjusted_class_names
-        
-        # Mostrar matriz de confusão para depuração
-        print("\nMatriz de Confusão:")
-        print(cm)
-        print("Nomes das classes:", self.class_names)
         
         return {
             'model': self.model,
@@ -260,4 +179,4 @@ class RGBFeatureNet:
             'class': predicted_class,
             'probabilities': probabilities,
             'raw_prediction': prediction
-        }
+        } 

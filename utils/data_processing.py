@@ -31,21 +31,6 @@ class DataProcessor(QObject):
         if len(class_dirs) < 2:
             raise ValueError("At least two class directories are required")
         
-        # Dicionário de tradução para nomes de classes em inglês
-        traducoes = {
-            "blue": "azul",
-            "red": "vermelho",
-            "green": "verde",
-            "yellow": "amarelo",
-            "orange": "laranja",
-            "purple": "roxo",
-            "brown": "marrom",
-            "black": "preto",
-            "white": "branco",
-            "gray": "cinza",
-            "pink": "rosa"
-        }
-        
         # Prepare empty lists for data
         all_features = []
         all_labels = []
@@ -56,12 +41,6 @@ class DataProcessor(QObject):
             self.status_updated.emit(f"Processing class: {class_dir}")
             self.progress_updated.emit(int((i / total_dirs) * 100))
             
-            # Traduzir o nome da classe se estiver em inglês
-            class_name = class_dir
-            if class_dir.lower() in traducoes:
-                class_name = traducoes[class_dir.lower()]
-                print(f"Traduzindo classe '{class_dir}' para '{class_name}'")
-            
             class_path = os.path.join(data_dir, class_dir)
             image_files = [f for f in os.listdir(class_path) 
                           if os.path.isfile(os.path.join(class_path, f)) and 
@@ -70,13 +49,13 @@ class DataProcessor(QObject):
             total_images = len(image_files)
             for j, img_file in enumerate(image_files):
                 if j % max(1, int(total_images / 10)) == 0:
-                    self.status_updated.emit(f"Class {class_name}: Processing image {j+1}/{total_images}")
+                    self.status_updated.emit(f"Class {class_dir}: Processing image {j+1}/{total_images}")
                 
                 try:
                     img_path = os.path.join(class_path, img_file)
                     features = self.extract_features(img_path, rgb_attributes)
                     all_features.append(features)
-                    all_labels.append(class_name)  # Usar o nome traduzido
+                    all_labels.append(class_dir)
                 except Exception as e:
                     print(f"Error processing {img_path}: {str(e)}")
         
@@ -85,14 +64,7 @@ class DataProcessor(QObject):
         # Create DataFrame
         feature_columns = []
         for attr in rgb_attributes:
-            # Traduzir nomes de atributos se contiverem nomes de classes em inglês
-            attr_name = attr['name']
-            for eng, pt in traducoes.items():
-                if eng.lower() in attr_name.lower():
-                    attr_name = attr_name.replace(eng, pt)
-                    print(f"Traduzindo atributo '{attr['name']}' para '{attr_name}'")
-            
-            feature_columns.append(attr_name)
+            feature_columns.append(f"{attr['name']}")
             
         # Convert feature lists to proper DataFrame
         df = pd.DataFrame(all_features, columns=feature_columns)
@@ -132,7 +104,7 @@ class DataProcessor(QObject):
         y_train = np.zeros((len(train_df), len(unique_classes)))
         for i, cls in enumerate(train_df['class']):
             y_train[i, class_mapping[cls]] = 1
-            
+        
         X_test = test_df.drop('class', axis=1).values
         
         # Codificar os dados de teste da mesma forma
@@ -145,7 +117,7 @@ class DataProcessor(QObject):
         test_df.to_csv('data/test_data.csv', index=False)
         
         # Registrar informações das classes
-        print(f"Classes processadas (traduzidas): {unique_classes}")
+        print(f"Classes processadas: {unique_classes}")
         print(f"Mapeamento de classes: {class_mapping}")
         
         self.status_updated.emit("Data processing complete")
