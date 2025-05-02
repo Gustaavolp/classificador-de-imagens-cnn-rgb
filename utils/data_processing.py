@@ -78,6 +78,12 @@ class DataProcessor(QObject):
             class_df = df[df['class'] == class_name]
             n_train = int(len(class_df) * train_split)
             
+            # Garantir que temos dados suficientes para treinamento e teste
+            if n_train == 0:
+                n_train = 1  # pelo menos 1 para treinamento
+            elif n_train == len(class_df):
+                n_train = max(1, len(class_df) - 1)  # pelo menos 1 para teste
+            
             train_df = pd.concat([train_df, class_df.iloc[:n_train]])
             test_df = pd.concat([test_df, class_df.iloc[n_train:]])
         
@@ -85,18 +91,34 @@ class DataProcessor(QObject):
         train_df = train_df.sample(frac=1).reset_index(drop=True)
         test_df = test_df.sample(frac=1).reset_index(drop=True)
         
-        # Prepare return data
+        # Preparar os dados para o formato correto para treinamento
         X_train = train_df.drop('class', axis=1).values
-        y_train = pd.get_dummies(train_df['class']).values
         
+        # Usar as classes exclusivamente em ordem alfabética para garantir consistência
+        unique_classes = sorted(df['class'].unique())
+        
+        # Criar dicionário para mapear classes
+        class_mapping = {cls: i for i, cls in enumerate(unique_classes)}
+        
+        # Criar one-hot encoding manualmente para manter consistência nos nomes das classes
+        y_train = np.zeros((len(train_df), len(unique_classes)))
+        for i, cls in enumerate(train_df['class']):
+            y_train[i, class_mapping[cls]] = 1
+            
         X_test = test_df.drop('class', axis=1).values
-        y_test = pd.get_dummies(test_df['class']).values
         
-        class_names = pd.get_dummies(train_df['class']).columns.tolist()
+        # Codificar os dados de teste da mesma forma
+        y_test = np.zeros((len(test_df), len(unique_classes)))
+        for i, cls in enumerate(test_df['class']):
+            y_test[i, class_mapping[cls]] = 1
         
-        # Save processed data
+        # Salvar dados processados para análise posterior
         train_df.to_csv('data/train_data.csv', index=False)
         test_df.to_csv('data/test_data.csv', index=False)
+        
+        # Registrar informações das classes
+        print(f"Classes processadas: {unique_classes}")
+        print(f"Mapeamento de classes: {class_mapping}")
         
         self.status_updated.emit("Data processing complete")
         self.progress_updated.emit(100)
@@ -106,7 +128,7 @@ class DataProcessor(QObject):
             'y_train': y_train,
             'X_test': X_test,
             'y_test': y_test,
-            'class_names': class_names,
+            'class_names': unique_classes,
             'feature_names': feature_columns
         }
     

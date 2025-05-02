@@ -1244,8 +1244,12 @@ class MainWindow(QMainWindow):
         self.current_model = results['model']
         history = results['history']
         
-        # Limpar figura anterior e redefinir
+        # Limpar figura anterior e TODOS os elementos visíveis
         self.figure.clear()
+        
+        # Fechar qualquer figura matplotlib anteriormente aberta
+        import matplotlib.pyplot as plt
+        plt.close('all')
         
         # Configurar o tamanho da figura - altura reduzida para minimizar espaço vertical
         self.figure.set_size_inches(14, 6)
@@ -1291,19 +1295,27 @@ class MainWindow(QMainWindow):
         # Reduzir espaçamento dos ticks e labels
         ax1.tick_params(axis='both', which='major', pad=2)
         
-        # Subplot para matriz de confusão com mais espaço
+        # Subplot para matriz de confusão
         if 'confusion_matrix' in results:
             ax2 = self.figure.add_subplot(gs[0, 1])
             cm = results['confusion_matrix']
             
-            # Usar as classes atualmente selecionadas em vez das classes do resultado
+            # Garantir que usamos os nomes das classes em português do dicionário class_data
             if hasattr(self, 'class_data') and self.class_data:
-                # Obter classes atuais em vez de usar as que vieram do resultado
+                # Obter classes atuais do dicionário de classes
                 class_names = list(self.class_data.keys())
             else:
-                # Fallback para as classes do resultado ou classes genéricas
-                class_names = results.get('class_names', [f"Classe {i}" for i in range(cm.shape[0])])
+                # Obter das classes do resultado
+                class_names = results.get('class_names', [])
+                # Se ainda estiverem em inglês ou genéricos, criar nomes genéricos em português
+                if not class_names or any(name.lower() in ['blue', 'red', 'green', 'class'] for name in class_names):
+                    class_names = [f"Classe {i+1}" for i in range(cm.shape[0])]
             
+            # Verificar dimensões da matriz
+            if cm.shape[0] != len(class_names):
+                # Ajustar para resolver incompatibilidade
+                class_names = [f"Classe {i+1}" for i in range(cm.shape[0])]
+                
             # Use imshow com melhor estética e limites definidos
             # Usar aspect='equal' para manter a matriz quadrada
             cax = ax2.imshow(cm, interpolation='nearest', cmap='Blues', aspect='equal')
@@ -1346,10 +1358,12 @@ class MainWindow(QMainWindow):
         self.figure.tight_layout(pad=1.0, rect=[0, 0, 1, 0.99])
         
         # Remover espaço em branco ao redor da figura
-        self.figure.subplots_adjust(top=0.99, bottom=0.08, left=0.06, right=0.98)
+        self.figure.subplots_adjust(top=0.99, bottom=0.12, left=0.08, right=0.98)
         
-        # Atualizar o canvas com método flush para garantir renderização completa
+        # Desenhar antes de limpar eventos para evitar problemas de renderização
         self.canvas.draw()
+        
+        # Limpar todos os eventos pendentes para evitar dupla renderização
         self.canvas.flush_events()
         
         # Update results summary com formatação melhorada e mais detalhes
@@ -1359,7 +1373,7 @@ class MainWindow(QMainWindow):
         final_val_loss = history.get('val_loss', [-1])[-1]
         
         # Determinar tipo de modelo usado para treinamento
-        model_type = "Convolutional Neural Network" if self.cnn_btn.isChecked() else "RGB Feature Network"
+        model_type = "Rede Neural Convolucional" if self.cnn_btn.isChecked() else "Rede de Características RGB"
         
         # Criar um texto mais detalhado e bem formatado
         results_text = (

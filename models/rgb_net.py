@@ -77,7 +77,15 @@ class RGBFeatureNet:
         y_train = data['y_train']
         X_test = data['X_test']
         y_test = data['y_test']
-        self.class_names = data['class_names']
+        
+        # Armazenar os nomes das classes originais
+        if 'class_names' in data:
+            self.class_names = data['class_names']
+            print(f"Classes para treinamento RGB: {self.class_names}")
+        else:
+            # Criar nomes genéricos se nenhum nome for fornecido
+            self.class_names = [f"Classe {i+1}" for i in range(y_train.shape[1])]
+            print(f"Nomes de classes não fornecidos, usando valores genéricos: {self.class_names}")
         
         # Escalonar características
         X_train = self.scaler.fit_transform(X_train)
@@ -112,6 +120,14 @@ class RGBFeatureNet:
         y_true_classes = np.argmax(y_test, axis=1)
         
         cm = confusion_matrix(y_true_classes, y_pred_classes)
+        
+        # Verificar se a matriz de confusão tem a dimensão correta
+        if cm.shape[0] != len(self.class_names):
+            print(f"ALERTA: Dimensão da matriz de confusão ({cm.shape[0]}) não corresponde ao número de classes ({len(self.class_names)})")
+            # Ajustar nomes de classes se necessário
+            adjusted_class_names = [f"Classe {i+1}" for i in range(cm.shape[0])]
+            print(f"Ajustando nomes de classes para: {adjusted_class_names}")
+            self.class_names = adjusted_class_names
         
         return {
             'model': self.model,
