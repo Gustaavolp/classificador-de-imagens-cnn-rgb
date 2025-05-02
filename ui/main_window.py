@@ -1304,15 +1304,30 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'class_data') and self.class_data:
                 # Obter classes atuais do dicionário de classes
                 class_names = list(self.class_data.keys())
+                print(f"Usando nomes de classes do class_data: {class_names}")
             else:
-                # Obter das classes do resultado
+                # Obter classes do resultado e verificar se estão em português
                 class_names = results.get('class_names', [])
-                # Se ainda estiverem em inglês ou genéricos, criar nomes genéricos em português
-                if not class_names or any(name.lower() in ['blue', 'red', 'green', 'class'] for name in class_names):
+                print(f"Classes do resultado: {class_names}")
+                
+                # Se estiverem em inglês, traduzir para português
+                if class_names and any(name.lower() in ['blue', 'red', 'green', 'yellow'] for name in class_names):
+                    translation = {
+                        'blue': 'Azul',
+                        'red': 'Vermelho',
+                        'green': 'Verde',
+                        'yellow': 'Amarelo'
+                    }
+                    class_names = [translation.get(name.lower(), name) for name in class_names]
+                    print(f"Classes traduzidas: {class_names}")
+                # Se ainda não tiver classes válidas, criar nomes genéricos
+                elif not class_names:
                     class_names = [f"Classe {i+1}" for i in range(cm.shape[0])]
+                    print(f"Usando nomes genéricos: {class_names}")
             
-            # Verificar dimensões da matriz
+            # Verificar dimensões da matriz de confusão
             if cm.shape[0] != len(class_names):
+                print(f"ALERTA: Dimensão da matriz de confusão ({cm.shape[0]}) não corresponde ao número de classes ({len(class_names)})")
                 # Ajustar para resolver incompatibilidade
                 class_names = [f"Classe {i+1}" for i in range(cm.shape[0])]
                 
@@ -1330,12 +1345,11 @@ class MainWindow(QMainWindow):
                             color="white" if cm[i, j] > thresh else "black",
                             fontsize=12)
             
-            # Configurar os ticks corretamente com fonte reduzida e rotação adequada
+            # Configurar os ticks corretamente com fonte reduzida
             if len(class_names) <= 10:  # Só mostrar nomes se não forem muitos
                 ax2.set_xticks(range(len(class_names)))
                 ax2.set_yticks(range(len(class_names)))
-                # Aumentar a rotação para 90 graus nos rótulos X para evitar sobreposição
-                ax2.set_xticklabels(class_names, rotation=90, ha="center", fontsize=12)
+                ax2.set_xticklabels(class_names, rotation=45, ha="right", fontsize=12)
                 ax2.set_yticklabels(class_names, fontsize=12)
             
             # Garantir limite de eixos exatos para a matriz sem margem extra
@@ -1345,9 +1359,9 @@ class MainWindow(QMainWindow):
             # Definir proporção quadrada para o gráfico da matriz
             ax2.set_box_aspect(0.95)
             
-            # Adicionar mais espaço na parte inferior para os rótulos X rotacionados
-            ax2.tick_params(axis='x', which='major', pad=8)
-            
+            # Reduzir espaçamento dos ticks e labels
+            ax2.tick_params(axis='both', which='major', pad=2)
+                
             ax2.set_xlabel('Predição', fontsize=12)
             ax2.set_ylabel('Valor Real', fontsize=12)
             
@@ -1714,7 +1728,7 @@ class MainWindow(QMainWindow):
             # Verificar se temos classes selecionadas
             if not hasattr(self, 'class_data') or not self.class_data:
                 raise ValueError("Nenhuma classe foi selecionada")
-                
+            
             if "RGB Feature" in model_type:
                 # Process with RGB Feature extraction
                 if not self.rgb_attributes:
@@ -2063,63 +2077,50 @@ class MainWindow(QMainWindow):
             if data_dir:
                 print(f"Adaptando dados processados para novo tipo de modelo: {model_type}")
                 
-                # Preencher informações básicas sobre o diretório de dados
                 try:
-                    # Usar apenas as classes que o usuário selecionou
+                    # Verificar se temos classes selecionadas
                     if hasattr(self, 'class_data') and self.class_data:
+                        # Obter proporção treino/teste 
                         train_split = self.train_split_spin.value() / 100.0
                         
-                        if "RGB Feature" in model_type:
-                            # RGB Feature Network requer atributos RGB, então exibir aviso se necessário
-                            if not self.rgb_attributes:
-                                self.log_widget.log("Atenção: Modelo RGB Feature Network requer atributos RGB definidos", level="warning")
-                        
-                        # Criar estrutura básica de dados para ambos os tipos de modelo usando apenas as classes selecionadas
+                        # Criar estrutura de dados completa
                         self.processed_data = {
                             'data_dir': data_dir,
                             'train_split': train_split,
-                            'class_names': list(self.class_data.keys())  # Usar apenas as classes selecionadas
+                            'class_names': list(self.class_data.keys())
                         }
+                        
+                        # Avisar se for modelo RGB sem atributos definidos
+                        if "RGB Feature" in model_type and not hasattr(self, 'rgb_attributes'):
+                            self.log_widget.log("Aviso: Modelo RGB requer atributos RGB", level="warning")
                     else:
-                        # Se não temos classes selecionadas, não criar dados processados
+                        # Sem classes selecionadas
                         self.processed_data = None
-                        if "RGB Feature" in model_type:
-                            self.log_widget.log("Atenção: Você precisa selecionar classes na aba Upload", level="warning")
+                        self.log_widget.log("Selecione classes na aba Upload", level="warning")
                 except Exception as e:
                     print(f"Erro ao adaptar dados: {str(e)}")
                 
-                # Habilitar o botão de treinamento apropriado apenas se temos classes
+                # Atualizar estado de habilitação dos botões de treino
                 if hasattr(self, 'class_data') and len(self.class_data) >= 2:
-                    if is_cnn and hasattr(self, 'cnn_train_btn'):
-                        self.cnn_train_btn.setEnabled(True)
-                        self.statusBar().showMessage(f"Tipo de modelo alterado para {model_type}. Dados mantidos.")
-                    elif hasattr(self, 'rgb_train_btn'):
-                        self.rgb_train_btn.setEnabled(True)
-                        self.statusBar().showMessage(f"Tipo de modelo alterado para {model_type}. Dados mantidos.")
+                    # Habilitar o botão de treino
+                    if hasattr(self, 'train_btn'):
+                        self.train_btn.setEnabled(True)
+                    
+                    # Mensagem na barra de status
+                    self.statusBar().showMessage(f"Tipo de modelo alterado para {model_type}. Dados mantidos.")
                 else:
-                    # Desabilitar botões se não temos classes suficientes
-                    if is_cnn and hasattr(self, 'cnn_train_btn'):
-                        self.cnn_train_btn.setEnabled(False)
-                    elif hasattr(self, 'rgb_train_btn'):
-                        self.rgb_train_btn.setEnabled(False)
+                    # Desabilitar botão de treino e mostrar aviso
+                    if hasattr(self, 'train_btn'):
+                        self.train_btn.setEnabled(False)
                     self.statusBar().showMessage("Selecione pelo menos 2 classes para treinar")
             else:
-                # Se não conseguimos preservar os dados, informar o usuário
-                self.log_widget.log(f"Tipo de modelo alterado para {model_type}. Você pode precisar processar os dados novamente.", level="info")
-                self.statusBar().showMessage(f"Tipo de modelo alterado. Por favor, processe os dados novamente.")
-                # Habilitar o botão apenas se temos classes selecionadas
-                if hasattr(self, 'class_data') and len(self.class_data) >= 2:
-                    # Habilitar o botão de treinamento apropriado
-                    if is_cnn and hasattr(self, 'cnn_train_btn'):
-                        self.cnn_train_btn.setEnabled(True)
-                    elif hasattr(self, 'rgb_train_btn'):
-                        self.rgb_train_btn.setEnabled(True)
-                else:
-                    # Desabilitar botões se não temos classes suficientes
-                    if is_cnn and hasattr(self, 'cnn_train_btn'):
-                        self.cnn_train_btn.setEnabled(False)
-                    elif hasattr(self, 'rgb_train_btn'):
-                        self.rgb_train_btn.setEnabled(False)
+                # Sem diretório de dados válido
+                self.log_widget.log(f"Tipo de modelo alterado para {model_type}. Recarregue os dados.", level="info")
+                self.statusBar().showMessage(f"Tipo de modelo alterado. Selecione as classes de dados.")
+                
+                # Desabilitar botão de treino sem dados válidos
+                if hasattr(self, 'train_btn'):
+                    self.train_btn.setEnabled(False)
     
     def closeEvent(self, event):
         """Handle application close event to properly clean up threads."""
