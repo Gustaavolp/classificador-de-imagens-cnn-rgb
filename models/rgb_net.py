@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import confusion_matrix
 
 class RGBFeatureNet:
-    """Neural network for RGB feature-based classification."""
+    """Rede neural para classificação baseada em características RGB."""
     
     def __init__(self):
         self.model = None
@@ -17,35 +17,35 @@ class RGBFeatureNet:
     def build_model(self, input_shape, num_classes, layers=3, neurons=16, 
                    activation='relu', learning_rate=0.001, optimizer='adam'):
         """
-        Build the neural network model.
+        Construir o modelo de rede neural.
         
         Args:
-            input_shape: Shape of input features
-            num_classes: Number of output classes
-            layers: Number of hidden layers
-            neurons: Number of neurons per hidden layer
-            activation: Activation function to use
-            learning_rate: Learning rate for optimizer
-            optimizer: Optimizer to use ('adam', 'sgd', or 'rmsprop')
+            input_shape: Formato dos atributos de entrada
+            num_classes: Número de classes de saída
+            layers: Número de camadas ocultas
+            neurons: Número de neurônios por camada oculta
+            activation: Função de ativação a ser usada
+            learning_rate: Taxa de aprendizado para o otimizador
+            optimizer: Otimizador a ser usado ('adam', 'sgd', ou 'rmsprop')
             
         Returns:
-            Compiled Keras model
+            Modelo Keras compilado
         """
         model = Sequential()
         
-        # Input layer
+        # Camada de entrada
         model.add(Dense(neurons, activation=activation, input_shape=(input_shape,)))
         model.add(Dropout(0.2))
         
-        # Hidden layers
+        # Camadas ocultas
         for _ in range(layers - 1):
             model.add(Dense(neurons, activation=activation))
             model.add(Dropout(0.2))
         
-        # Output layer
+        # Camada de saída
         model.add(Dense(num_classes, activation='softmax'))
         
-        # Configure optimizer
+        # Configurar otimizador
         if optimizer.lower() == 'adam':
             opt = Adam(learning_rate=learning_rate)
         elif optimizer.lower() == 'sgd':
@@ -53,7 +53,7 @@ class RGBFeatureNet:
         else:
             opt = RMSprop(learning_rate=learning_rate)
         
-        # Compile model
+        # Compilar modelo
         model.compile(
             optimizer=opt,
             loss='categorical_crossentropy',
@@ -64,14 +64,14 @@ class RGBFeatureNet:
     
     def train(self, data, params):
         """
-        Train the neural network on the provided data.
+        Treinar a rede neural com os dados fornecidos.
         
         Args:
-            data: Dictionary with X_train, y_train, X_test, y_test
-            params: Dictionary with hyperparameters
+            data: Dicionário com X_train, y_train, X_test, y_test
+            params: Dicionário com hiperparâmetros
             
         Returns:
-            Dictionary with training results
+            Dicionário com resultados do treinamento
         """
         X_train = data['X_train']
         y_train = data['y_train']
@@ -79,11 +79,11 @@ class RGBFeatureNet:
         y_test = data['y_test']
         self.class_names = data['class_names']
         
-        # Scale features
+        # Escalonar características
         X_train = self.scaler.fit_transform(X_train)
         X_test = self.scaler.transform(X_test)
         
-        # Build model
+        # Construir modelo
         self.model = self.build_model(
             input_shape=X_train.shape[1],
             num_classes=y_train.shape[1],
@@ -94,7 +94,7 @@ class RGBFeatureNet:
             optimizer=params.get('optimizer', 'adam')
         )
         
-        # Train model
+        # Treinar modelo
         history = self.model.fit(
             X_train, y_train,
             validation_data=(X_test, y_test),
@@ -103,10 +103,10 @@ class RGBFeatureNet:
             verbose=1
         )
         
-        # Evaluate model
+        # Avaliar modelo
         _, accuracy = self.model.evaluate(X_test, y_test, verbose=0)
         
-        # Generate confusion matrix
+        # Gerar matriz de confusão
         y_pred = self.model.predict(X_test)
         y_pred_classes = np.argmax(y_pred, axis=1)
         y_true_classes = np.argmax(y_test, axis=1)
@@ -124,40 +124,40 @@ class RGBFeatureNet:
     
     def classify_image(self, image_path, model, rgb_attributes):
         """
-        Classify a single image using the trained model.
+        Classificar uma única imagem usando o modelo treinado.
         
         Args:
-            image_path: Path to the image
-            model: Trained Keras model
-            rgb_attributes: List of RGB attributes
+            image_path: Caminho para a imagem
+            model: Modelo Keras treinado
+            rgb_attributes: Lista de atributos RGB
             
         Returns:
-            Dictionary with classification results
+            Dicionário com resultados da classificação
         """
         from utils.data_processing import DataProcessor
         
-        # Extract features
+        # Extrair características
         data_processor = DataProcessor()
         features = data_processor.extract_image_features(image_path, rgb_attributes)
         
-        # Scale features
+        # Escalonar características
         if hasattr(self, 'scaler') and self.scaler is not None:
             features = self.scaler.transform(features)
         
-        # Make prediction
+        # Fazer predição
         prediction = model.predict(features)[0]
         
-        # Get class names if not already stored
+        # Obter nomes das classes se não estiverem já armazenados
         if self.class_names is None and hasattr(model, 'output_names'):
             self.class_names = model.output_names
         
-        # Create result dictionary
+        # Criar dicionário de resultado
         if self.class_names:
             predicted_class = self.class_names[np.argmax(prediction)]
             probabilities = {cls: float(prob) for cls, prob in zip(self.class_names, prediction)}
         else:
-            predicted_class = f"Class {np.argmax(prediction)}"
-            probabilities = {f"Class {i}": float(prob) for i, prob in enumerate(prediction)}
+            predicted_class = f"Classe {np.argmax(prediction)}"
+            probabilities = {f"Classe {i}": float(prob) for i, prob in enumerate(prediction)}
         
         return {
             'class': predicted_class,

@@ -18,25 +18,25 @@ def exception_hook(exctype, value, tb):
     sys.exit(1)
 
 def main():
-    """Main application entry point."""
+    """Ponto de entrada principal da aplicação."""
     try:
         # Configurar hook para exceções não tratadas
         sys.excepthook = exception_hook
         
-        # Create application directory structure if it doesn't exist
+        # Criar estrutura de diretórios da aplicação se não existir
         os.makedirs("data", exist_ok=True)
         os.makedirs("models", exist_ok=True)
         os.makedirs("logs", exist_ok=True)
         
-        # Create application instance
+        # Criar instância da aplicação
         app = QApplication(sys.argv)
-        app.setApplicationName("Neural Network Feature Extractor")
+        app.setApplicationName("Classificador de Imagens CNN/RGB")
         
-        # Set stylesheet (optional - for better styling)
+        # Definir folha de estilo (opcional - para melhor estilização)
         # with open("ui/style.qss", "r") as f:
         #     app.setStyleSheet(f.read())
         
-        # Create and show the main window
+        # Criar e mostrar a janela principal
         window = MainWindow()
         window.show()
         
@@ -45,20 +45,20 @@ def main():
         keepalive_timer.timeout.connect(lambda: print("Aplicação em execução..."))
         keepalive_timer.start(5000)  # A cada 5 segundos
         
-        # Set up signal handling for clean shutdown
+        # Configurar manipulação de sinais para encerramento adequado
         def signal_handler(signum, frame):
             print(f"Sinal {signum} recebido, encerrando aplicação...")
             keepalive_timer.stop()
             window.close()
             QTimer.singleShot(1000, app.quit)  # Dar um tempo para o encerramento
         
-        # Register signal handlers for SIGINT (Ctrl+C) and SIGTERM
+        # Registrar manipuladores de sinal para SIGINT (Ctrl+C) e SIGTERM
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
         
         print("Aplicação iniciada e em execução...")
         
-        # Start the application event loop
+        # Iniciar o loop de eventos da aplicação
         return app.exec()
     except Exception as e:
         print(f"ERRO NA INICIALIZAÇÃO: {str(e)}")

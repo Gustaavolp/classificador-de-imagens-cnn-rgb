@@ -9,7 +9,7 @@ from sklearn.metrics import confusion_matrix
 from PIL import Image
 
 class ConvolutionalNetwork:
-    """Convolutional Neural Network for image classification."""
+    """Rede Neural Convolucional para classificação de imagens."""
     
     def __init__(self):
         self.model = None
@@ -19,19 +19,19 @@ class ConvolutionalNetwork:
     
     def build_model(self, num_classes, params=None):
         """
-        Build and compile the CNN model.
+        Construir e compilar o modelo CNN.
         
         Args:
-            num_classes: Number of output classes
-            params: Dictionary with optional hyperparameters
+            num_classes: Número de classes de saída
+            params: Dicionário com hiperparâmetros opcionais
             
         Returns:
-            Compiled Keras model
+            Modelo Keras compilado
         """
         if params is None:
             params = {}
             
-        # Get parameters with defaults
+        # Obter parâmetros com valores padrão
         layers = params.get('layers', 4)
         neurons = params.get('neurons', 64)
         activation = params.get('activation', 'relu')
@@ -40,43 +40,43 @@ class ConvolutionalNetwork:
         img_width = params.get('img_width', self.img_width)
         img_height = params.get('img_height', self.img_height)
         
-        # Set instance variables
+        # Definir variáveis de instância
         self.img_width = img_width
         self.img_height = img_height
         
-        # Create model
+        # Criar modelo
         model = Sequential()
         
-        # First convolutional layer
+        # Primeira camada convolucional
         model.add(Conv2D(32, (3, 3), activation=activation, padding='same', 
                          input_shape=(img_width, img_height, 3)))
         model.add(MaxPooling2D(pool_size=(2, 2)))
         
-        # Second convolutional layer
+        # Segunda camada convolucional
         model.add(Conv2D(64, (3, 3), activation=activation, padding='same'))
         model.add(MaxPooling2D(pool_size=(2, 2)))
         
-        # Third convolutional layer (optional based on model depth)
+        # Terceira camada convolucional (opcional com base na profundidade do modelo)
         if layers > 3:
             model.add(Conv2D(128, (3, 3), activation=activation, padding='same'))
             model.add(MaxPooling2D(pool_size=(2, 2)))
         
-        # Flatten layer
+        # Camada de achatamento (Flatten)
         model.add(Flatten())
         
-        # Dense layers
+        # Camadas densas
         model.add(Dense(neurons, activation=activation))
         model.add(Dropout(0.5))
         
-        # Add more dense layers based on parameter
+        # Adicionar mais camadas densas com base no parâmetro
         for _ in range(layers - 3):
             model.add(Dense(neurons // 2, activation=activation))
             model.add(Dropout(0.3))
         
-        # Output layer
+        # Camada de saída
         model.add(Dense(num_classes, activation='softmax'))
         
-        # Configure optimizer
+        # Configurar otimizador
         if optimizer_name.lower() == 'adam':
             optimizer = Adam(learning_rate=learning_rate)
         elif optimizer_name.lower() == 'sgd':
@@ -84,7 +84,7 @@ class ConvolutionalNetwork:
         else:  # rmsprop
             optimizer = RMSprop(learning_rate=learning_rate)
             
-        # Compile model
+        # Compilar modelo
         model.compile(
             optimizer=optimizer,
             loss='categorical_crossentropy',
@@ -95,39 +95,39 @@ class ConvolutionalNetwork:
     
     def train(self, data_dir, train_split=0.8, params=None):
         """
-        Train the CNN on the provided data directory.
+        Treinar a CNN no diretório de dados fornecido.
         
         Args:
-            data_dir: Directory containing class subdirectories with images
-            train_split: Proportion of data to use for training (0.0 to 1.0)
-            params: Dictionary with hyperparameters
+            data_dir: Diretório contendo subdiretórios de classes com imagens
+            train_split: Proporção de dados a usar para treinamento (0.0 a 1.0)
+            params: Dicionário com hiperparâmetros
             
         Returns:
-            Dictionary with training results
+            Dicionário com resultados do treinamento
         """
         if params is None:
             params = {}
             
-        # Get parameters with defaults
+        # Obter parâmetros com valores padrão
         batch_size = params.get('batch_size', 8)
         epochs = params.get('epochs', 200)
         img_width = params.get('img_width', self.img_width)
         img_height = params.get('img_height', self.img_height)
         
-        # Update instance variables
+        # Atualizar variáveis de instância
         self.img_width = img_width
         self.img_height = img_height
         
-        # Data augmentation for training set
+        # Aumento de dados para conjunto de treinamento
         train_datagen = ImageDataGenerator(
             rescale=1./255,
             shear_range=0.2,
             zoom_range=0.2,
             horizontal_flip=True,
-            validation_split=1-train_split  # Set validation split
+            validation_split=1-train_split  # Definir divisão de validação
         )
         
-        # Generator for training data
+        # Gerador para dados de treinamento
         train_generator = train_datagen.flow_from_directory(
             data_dir,
             target_size=(img_width, img_height),
@@ -136,7 +136,7 @@ class ConvolutionalNetwork:
             subset='training'
         )
         
-        # Generator for validation data
+        # Gerador para dados de validação
         validation_generator = train_datagen.flow_from_directory(
             data_dir,
             target_size=(img_width, img_height),
@@ -145,14 +145,14 @@ class ConvolutionalNetwork:
             subset='validation'
         )
         
-        # Store class names
+        # Armazenar nomes das classes
         self.class_names = list(train_generator.class_indices.keys())
         
-        # Build model
+        # Construir modelo
         num_classes = len(self.class_names)
         self.model = self.build_model(num_classes, params)
         
-        # Train model
+        # Treinar modelo
         history = self.model.fit(
             train_generator,
             steps_per_epoch=train_generator.samples // batch_size,
@@ -161,12 +161,12 @@ class ConvolutionalNetwork:
             validation_steps=validation_generator.samples // batch_size
         )
         
-        # Evaluate on validation set
+        # Avaliar no conjunto de validação
         validation_generator.reset()
         y_pred = []
         y_true = []
         
-        # Predict on batches
+        # Predizer em lotes
         for i in range(validation_generator.samples // batch_size + 1):
             try:
                 x, y = next(validation_generator)
@@ -176,14 +176,14 @@ class ConvolutionalNetwork:
             except StopIteration:
                 break
                 
-        # Trim to actual validation size
+        # Recortar para o tamanho real da validação
         y_pred = y_pred[:validation_generator.samples]
         y_true = y_true[:validation_generator.samples]
         
-        # Calculate confusion matrix
+        # Calcular matriz de confusão
         cm = confusion_matrix(y_true, y_pred)
         
-        # Return results
+        # Retornar resultados
         return {
             'model': self.model,
             'history': history.history,
@@ -194,43 +194,57 @@ class ConvolutionalNetwork:
     
     def classify_image(self, image_path, model):
         """
-        Classify a single image using the trained model.
+        Classificar uma única imagem usando o modelo treinado.
         
         Args:
-            image_path: Path to the image
-            model: Trained Keras model
+            image_path: Caminho para a imagem
+            model: Modelo treinado
             
         Returns:
-            Dictionary with classification results
+            Dicionário com resultados da classificação
         """
+        # Carregar e preparar a imagem
+        img_width, img_height = self.img_width, self.img_height
+        
         try:
-            # Load and preprocess the image
-            img = Image.open(image_path)
-            img = img.resize((self.img_width, self.img_height))
-            img_array = tf.keras.preprocessing.image.img_to_array(img)
-            img_array = img_array / 255.0  # Normalize to [0,1]
-            img_array = tf.expand_dims(img_array, 0)  # Create batch dimension
+            img = Image.open(image_path).convert('RGB')
+            img = img.resize((img_width, img_height))
+            img_array = np.array(img) / 255.0  # Normalizar para [0,1]
+            img_array = np.expand_dims(img_array, axis=0)  # Adicionar dimensão de lote
             
-            # Make prediction
+            # Fazer a predição
             predictions = model.predict(img_array)
-            predicted_class_idx = np.argmax(predictions[0])
             
-            # Get class names if not already stored
-            if not self.class_names:
-                if hasattr(model, 'output_names'):
-                    self.class_names = model.output_names
-                else:
-                    self.class_names = [f"Class {i}" for i in range(predictions.shape[1])]
+            # Encontrar classe predita
+            predicted_class_index = np.argmax(predictions[0])
             
-            # Create result dictionary
-            predicted_class = self.class_names[predicted_class_idx]
-            probabilities = {cls: float(predictions[0][i]) for i, cls in enumerate(self.class_names)}
+            # Obter nomes das classes
+            if hasattr(self, 'class_names') and self.class_names:
+                class_names = self.class_names
+            else:
+                # Se os nomes das classes não estiverem disponíveis, usar índices
+                num_classes = predictions.shape[1]
+                class_names = [f"Classe {i}" for i in range(num_classes)]
             
+            # Criar dicionário de probabilidades
+            probabilities = {}
+            for i, prob in enumerate(predictions[0]):
+                class_name = class_names[i] if i < len(class_names) else f"Classe {i}"
+                probabilities[class_name] = float(prob)
+            
+            # Classe predita
+            predicted_class = class_names[predicted_class_index] if predicted_class_index < len(class_names) else f"Classe {predicted_class_index}"
+            
+            # Retornar resultados
             return {
                 'class': predicted_class,
                 'probabilities': probabilities,
-                'raw_prediction': predictions[0]
+                'raw_prediction': predictions[0].tolist()
             }
-            
         except Exception as e:
-            raise Exception(f"Error classifying image: {str(e)}")
+            print(f"Erro ao classificar imagem: {str(e)}")
+            return {
+                'class': 'Erro',
+                'probabilities': {},
+                'error': str(e)
+            }
