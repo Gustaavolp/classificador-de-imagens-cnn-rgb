@@ -25,8 +25,8 @@ Uma aplicação com interface gráfica para análise de imagens e classificaçã
 
 1. Clone este repositório:
    ```
-   git clone https://github.com/Gustaavolp/Classificador-de-Imagens-CNN-RGB.git
-   cd Classificador-de-Imagens-CNN-RGB
+   git clone https://github.com/Gustaavolp/classificador-de-imagens-cnn-rgb.git
+   cd classificador-de-imagens-cnn-rgb
    ```
 
 2. Instale as dependências:
