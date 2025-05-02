@@ -1961,81 +1961,61 @@ class MainWindow(QMainWindow):
                 self.handle_error(f"Error loading image: {str(e)}")
     
     def classify_image(self):
-        """Classify the selected image using the loaded model."""
-        if not self.current_model:
-            QMessageBox.warning(self, "No Model", "Please load a model first.")
+        """Classify the loaded image with the trained model."""
+        if not hasattr(self, 'classifier') or self.classifier is None:
+            QMessageBox.warning(self, "Modelo não Carregado", 
+                              "Por favor, carregue ou treine um modelo primeiro.")
             return
-        if not self.image_path_label.text() or self.image_path_label.text() == "No image selected":
-            QMessageBox.warning(self, "No Image", "Please select an image first.")
+            
+        if not hasattr(self, 'current_image_path') or not self.current_image_path:
+            QMessageBox.warning(self, "Sem Imagem", 
+                              "Por favor, carregue uma imagem para classificar.")
             return
-        
-        try:
-            image_path = self.image_path_label.text()
             
-            # Iniciar classificação em uma thread separada
-            self.statusBar().showMessage("Classificando imagem...")
-            
-            # Obter tipo de modelo da informação carregada ou combo box
-            model_type = getattr(self, 'loaded_model_type', None) or self.model_type_combo.currentText()
-            self.log_widget.log(f"Using model type: {model_type} for classification")
-            
-            # Criar worker thread
-            if "RGB Feature" in model_type:
-                # Para RGB Feature Network, precisamos dos atributos RGB
-                if not self.rgb_attributes:
-                    QMessageBox.warning(self, "Missing RGB Attributes", 
-                                      "This model requires RGB attributes for classification.")
-                    self.statusBar().showMessage("Classification cancelled - missing RGB attributes")
-                    return
+        # Classificar a imagem
+        if self.current_mode == "CNN":
+            result = self.classifier.classify_image(self.current_image_path)
+        else:  # RGB mode
+            # Verificar se temos atributos RGB
+            if not hasattr(self, 'rgb_attributes') or not self.rgb_attributes:
+                QMessageBox.warning(self, "Sem Atributos RGB", 
+                                  "Por favor, defina e salve atributos RGB primeiro.")
+                return
                 
-                worker = WorkerThread(
-                    self.rgb_feature_net.classify_image, 
-                    image_path, 
-                    self.current_model,
-                    self.rgb_attributes
-                )
-                self.log_widget.log(f"Using RGB Feature Network with {len(self.rgb_attributes)} attributes")
-            else:  # CNN
-                worker = WorkerThread(
-                    self.cnn.classify_image, 
-                    image_path, 
-                    self.current_model
-                )
-                self.log_widget.log("Using CNN for classification")
+            # Classificar usando RGB
+            result = self.rgb_classifier.classify_image(
+                self.current_image_path, 
+                self.rgb_model if hasattr(self, 'rgb_model') else None,
+                self.rgb_attributes
+            )
+        
+        # Exibir resultados
+        if 'class' in result and 'probabilities' in result:
+            # Log da classificação
+            self.log_widget.log(f"Classification result: {result['class']}")
             
-            # Conectar sinais
-            worker.task_finished.connect(self.classification_finished)
-            worker.error_occurred.connect(self.handle_error)
+            # Atualizar texto de resultado
+            self.result_label.setText(f"Predicted Class: {result['class']}")
             
-            # Add to thread list to prevent premature garbage collection
-            self.worker_threads.append(worker)
-            global active_worker_threads
-            active_worker_threads.append(worker)
+            # Formatar probabilidades para exibição
+            prob_text = "Probabilitites:\n"
             
-            # Start thread
-            worker.start()
+            # Ordenar probabilidades do maior para o menor
+            sorted_probs = sorted(
+                result['probabilities'].items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )
             
-        except Exception as e:
-            self.handle_error(f"Error classifying image: {str(e)}")
-            self.statusBar().showMessage("Classification failed")
-    
-    def classification_finished(self, results):
-        """Handle classification results."""
-        self.statusBar().showMessage("Classification complete")
-        
-        predicted_class = results['class']
-        probabilities = results['probabilities']
-        
-        # Update result labels
-        self.class_result_label.setText(f"Predicted Class: {predicted_class}")
-        
-        prob_text = "Probabilities:\n"
-        for cls, prob in probabilities.items():
-            prob_text += f"{cls}: {prob:.4f}\n"
-        
-        self.class_probabilities.setText(prob_text)
-        
-        self.log_widget.log(f"Classification result: {predicted_class}")
+            for class_name, prob in sorted_probs:
+                # Formatar como percentagem com 2 casas decimais
+                prob_text += f"{class_name}: {prob*100:.2f}%\n"
+            
+            self.probabilities_label.setText(prob_text)
+        else:
+            self.log_widget.log("Classification failed. No valid result returned.")
+            self.result_label.setText("Classification failed")
+            self.probabilities_label.setText("")
     
     def data_processing_finished(self, result):
         """Handle data processing completion."""

@@ -15,6 +15,8 @@ class RGBFeatureNet:
         self.scaler = StandardScaler()
         self.class_names = None
         self.input_shape = None
+        self.feature_weights = None
+        self.use_direct_classification = True  # Nova flag para usar classificação direta
     
     def build_model(self, input_shape, num_classes, layers=3, neurons=32, 
                    activation='relu', learning_rate=0.001, optimizer='adam'):
@@ -111,6 +113,102 @@ class RGBFeatureNet:
         print(f"Verificação de atributos RGB: {len(rgb_attributes)} atributos válidos")
         return True
     
+    def direct_classification(self, features, class_names):
+        """
+        Classificação direta baseada em regras, sem usar rede neural.
+        
+        Args:
+            features: Características extraídas da imagem
+            class_names: Nomes das classes
+            
+        Returns:
+            Array de probabilidades para cada classe
+        """
+        print(f"Usando classificação direta com features: {features}")
+        
+        # Verificar se temos features e classes
+        if len(features) == 0 or len(class_names) == 0:
+            print("ERRO: Sem características ou classes para classificação direta")
+            # Retornar probabilidades uniformes
+            return np.ones(len(class_names)) / len(class_names)
+        
+        # Verificar se todas as features são zero
+        if np.all(features == 0):
+            print("ALERTA: Todas as características são zero, impossível classificar com precisão")
+            # Retornar probabilidades uniformes
+            return np.ones(len(class_names)) / len(class_names)
+        
+        # Se temos pesos específicos de features, usá-los
+        if self.feature_weights is not None and len(self.feature_weights) == len(features):
+            weighted_features = features * self.feature_weights
+            print(f"Usando pesos de características: {self.feature_weights}")
+            print(f"Características ponderadas: {weighted_features}")
+        else:
+            # Se não temos pesos, usar as features diretamente
+            weighted_features = features
+        
+        # Normalizar features - garantir que somem 1.0
+        if np.sum(weighted_features) > 0:
+            normalized_features = weighted_features / np.sum(weighted_features)
+        else:
+            # Se a soma for zero, usar distribuição uniforme
+            normalized_features = np.ones_like(weighted_features) / len(weighted_features)
+        
+        # Mapear características para classes - este é o ponto mais crítico
+        num_features = len(normalized_features)
+        num_classes = len(class_names)
+        
+        # Criar matriz de mapeamento feature -> class (inicialmente uniforme)
+        feature_to_class = np.zeros((num_features, num_classes))
+        
+        if num_features == num_classes:
+            # Caso perfeito: uma característica por classe
+            for i in range(num_features):
+                feature_to_class[i, i] = 1.0
+            print("Mapeamento direto de características para classes (1:1)")
+        else:
+            # Caso com números diferentes de características e classes
+            # Distribuir características uniformemente entre as classes
+            for i in range(num_features):
+                # Atribuir esta característica principalmente à classe correspondente
+                class_idx = i % num_classes
+                feature_to_class[i, class_idx] = 0.8  # 80% para a classe principal
+                
+                # Distribuir o resto uniformemente entre as outras classes
+                other_classes = [j for j in range(num_classes) if j != class_idx]
+                if other_classes:
+                    remaining = 0.2
+                    for j in other_classes:
+                        feature_to_class[i, j] = remaining / len(other_classes)
+            
+            print(f"Mapeamento de {num_features} características para {num_classes} classes")
+        
+        # Calcular probabilidades
+        # P(classe) = soma(P(característica) * P(classe|característica))
+        probabilities = np.zeros(num_classes)
+        
+        for i in range(num_classes):
+            # Para cada classe, somar a contribuição de cada característica
+            class_prob = 0
+            for j in range(num_features):
+                class_prob += normalized_features[j] * feature_to_class[j, i]
+            probabilities[i] = class_prob
+        
+        # Garantir que as probabilidades somem 1.0
+        if np.sum(probabilities) > 0:
+            probabilities = probabilities / np.sum(probabilities)
+        else:
+            # Fallback para distribuição uniforme
+            probabilities = np.ones(num_classes) / num_classes
+        
+        # Enfatizar ainda mais a classe mais provável
+        max_idx = np.argmax(probabilities)
+        probabilities = probabilities ** 2  # Elevar ao quadrado aumenta a diferença
+        probabilities = probabilities / np.sum(probabilities)  # Renormalizar
+        
+        print(f"Probabilidades calculadas: {probabilities}")
+        return probabilities
+    
     def train(self, data, params):
         """
         Treinar a rede neural com os dados fornecidos.
@@ -122,6 +220,10 @@ class RGBFeatureNet:
         Returns:
             Dicionário com resultados do treinamento
         """
+        # Verificar se devemos usar classificação direta
+        self.use_direct_classification = params.get('use_direct_classification', True)
+        print(f"Modo de classificação: {'Direta baseada em regras' if self.use_direct_classification else 'Rede Neural'}")
+        
         # Verificar se temos dados de RGB
         if 'rgb_attributes' in params:
             rgb_attributes = params['rgb_attributes']
@@ -160,6 +262,74 @@ class RGBFeatureNet:
             self.class_names = [f"Classe {i+1}" for i in range(y_train.shape[1])]
             print(f"Nomes de classes não fornecidos, usando valores genéricos: {self.class_names}")
         
+        # Se estivermos usando classificação direta, não precisamos treinar uma rede
+        if self.use_direct_classification:
+            print("Usando classificação direta baseada em regras, pulando treinamento de rede neural")
+            
+            # Calcular médias das características por classe para usar como referência
+            feature_means = []
+            for i in range(y_train.shape[1]):  # Para cada classe
+                # Selecionar exemplos desta classe
+                class_indices = np.argmax(y_train, axis=1) == i
+                if np.any(class_indices):
+                    # Calcular média das características para esta classe
+                    class_features = X_train[class_indices]
+                    class_mean = np.mean(class_features, axis=0)
+                    feature_means.append(class_mean)
+                else:
+                    # Se não temos exemplos desta classe, usar zeros
+                    feature_means.append(np.zeros(X_train.shape[1]))
+            
+            # Criar matriz de características por classe
+            self.feature_means = np.array(feature_means)
+            print(f"Médias de características por classe:\n{self.feature_means}")
+            
+            # Criar pesos de características baseados na variância entre classes
+            # Características com maior variância entre classes são mais discriminativas
+            feature_vars = np.var(self.feature_means, axis=0)
+            self.feature_weights = feature_vars / np.sum(feature_vars) if np.sum(feature_vars) > 0 else np.ones(X_train.shape[1])
+            print(f"Pesos das características: {self.feature_weights}")
+            
+            # Avaliar com o conjunto de teste
+            y_pred = []
+            for i in range(len(X_test)):
+                probs = self.direct_classification(X_test[i], self.class_names)
+                y_pred.append(probs)
+            y_pred = np.array(y_pred)
+            
+            # Calcular acurácia
+            y_pred_classes = np.argmax(y_pred, axis=1)
+            y_true_classes = np.argmax(y_test, axis=1)
+            accuracy = np.mean(y_pred_classes == y_true_classes)
+            
+            # Criar matriz de confusão
+            cm = confusion_matrix(y_true_classes, y_pred_classes)
+            print(f"Matriz de confusão:\n{cm}")
+            
+            # Criar um pseudo-histórico para compatibilidade
+            history = {
+                'accuracy': [accuracy],
+                'val_accuracy': [accuracy],
+                'loss': [0.0],
+                'val_loss': [0.0]
+            }
+            
+            return {
+                'model': None,  # Não temos modelo de rede neural
+                'history': history,
+                'accuracy': accuracy,
+                'loss': 0.0,
+                'scaler': None,  # Não usamos scaler
+                'class_names': self.class_names,
+                'confusion_matrix': cm,
+                'input_shape': X_train.shape[1],
+                'feature_weights': self.feature_weights,
+                'feature_means': self.feature_means,
+                'use_direct_classification': True
+            }
+        
+        # Código para treinar rede neural, caso use_direct_classification = False
+        # ... Resto do código original para treinamento de rede neural ...
         # Escalonar características usando scaler
         print("Escalonando características...")
         X_train_scaled = self.scaler.fit_transform(X_train)
@@ -261,7 +431,8 @@ class RGBFeatureNet:
             'scaler': self.scaler,
             'class_names': self.class_names,
             'confusion_matrix': cm,
-            'input_shape': X_train.shape[1]
+            'input_shape': X_train.shape[1],
+            'use_direct_classification': False
         }
     
     def classify_image(self, image_path, model, rgb_attributes):
@@ -293,33 +464,31 @@ class RGBFeatureNet:
         print("Extraindo características...")
         data_processor = DataProcessor()
         features = data_processor.extract_image_features(image_path, rgb_attributes)
+        features = features.flatten()  # Garantir que seja 1D
         
-        print(f"Características extraídas: {features.shape}")
-        print(f"Valores: {features}")
+        print(f"Características extraídas: {features}")
         
-        # Escalonar características usando o mesmo scaler do treinamento
-        if hasattr(self, 'scaler') and self.scaler is not None:
-            print("Escalonando características...")
-            features_scaled = self.scaler.transform(features)
-            print(f"Características escalonadas: {features_scaled}")
+        # Verificar se estamos usando classificação direta ou rede neural
+        if self.use_direct_classification:
+            # Classificação direta baseada em regras
+            prediction = self.direct_classification(features, self.class_names)
         else:
-            print("ALERTA: Não foi encontrado um scaler, usando características não escalonadas")
-            features_scaled = features
-        
-        # Fazer predição
-        print("Realizando predição...")
-        prediction = model.predict(features_scaled)[0]
+            # Classificação com rede neural
+            # Escalonar características usando o mesmo scaler do treinamento
+            if hasattr(self, 'scaler') and self.scaler is not None:
+                print("Escalonando características...")
+                features_scaled = self.scaler.transform(features.reshape(1, -1))
+                print(f"Características escalonadas: {features_scaled}")
+            else:
+                print("ALERTA: Não foi encontrado um scaler, usando características não escalonadas")
+                features_scaled = features.reshape(1, -1)
+            
+            # Fazer predição
+            print("Realizando predição...")
+            prediction = model.predict(features_scaled)[0]
         
         print(f"Valores de predição: {prediction}")
         print(f"Soma das predições: {np.sum(prediction)}")
-        
-        # Obter nomes das classes
-        if self.class_names is None:
-            if hasattr(model, 'output_names'):
-                self.class_names = model.output_names
-            else:
-                # Se não temos nomes das classes, criar nomes genéricos
-                self.class_names = [f"Classe {i+1}" for i in range(len(prediction))]
         
         # Criar dicionário de resultado com todas as probabilidades
         predicted_class_idx = np.argmax(prediction)
