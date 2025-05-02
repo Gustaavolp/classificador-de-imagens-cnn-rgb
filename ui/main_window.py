@@ -82,8 +82,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Classificador de Imagens CNN/RGB")
-        self.resize(1200, 800)
-        self.setMinimumSize(1000, 700)  # Set minimum window size
+        self.resize(1300, 900)  # Tamanho inicial maior
+        self.setMinimumSize(1200, 800)  # Tamanho mínimo maior
         
         # Para rastrear threads ativas
         self.worker_threads = []
@@ -511,6 +511,23 @@ class MainWindow(QMainWindow):
                                       "A pasta selecionada não contém imagens. Selecione uma pasta com imagens.")
                     return
                 
+                # Verificar se mudamos de diretório pai
+                parent_dir = os.path.dirname(directory)
+                
+                # Se já temos um diretório de dados e ele é diferente do novo, perguntar ao usuário
+                if (hasattr(self, 'training_data_directory') and 
+                    self.training_data_directory and 
+                    self.training_data_directory != parent_dir):
+                    
+                    resp = QMessageBox.question(self, "Mudança de Conjunto de Dados",
+                                              "Você está selecionando uma pasta de um diretório diferente. "
+                                              "Deseja limpar as classes anteriores e começar com um novo conjunto de dados?",
+                                              QMessageBox.Yes | QMessageBox.No)
+                    
+                    if resp == QMessageBox.Yes:
+                        # Limpar dados anteriores
+                        self.reset_app_progress()
+                
                 # Inicializar class_data se necessário
                 if not hasattr(self, 'class_data'):
                     self.class_data = {}
@@ -529,7 +546,6 @@ class MainWindow(QMainWindow):
                     self.update_rgb_selectors_for_classes()
                 
                 # Manter o diretório de dados (o pai comum de todas as classes)
-                parent_dir = os.path.dirname(directory)
                 self.training_data_directory = parent_dir
                 
                 self.log_widget.log(f"Adicionada classe: {class_name} com {len(image_files)} imagens")
@@ -774,10 +790,11 @@ class MainWindow(QMainWindow):
         results_group = QGroupBox("Resultados do Treinamento")
         results_layout = QVBoxLayout()
         
-        # Matplotlib para plotagem
-        self.figure = Figure(figsize=(9, 5), dpi=100)
+        # Matplotlib para plotagem - aumentar tamanho mínimo
+        self.figure = Figure(figsize=(12, 7), dpi=100)
         self.canvas = FigureCanvas(self.figure)
-        self.canvas.setMinimumHeight(400)
+        self.canvas.setMinimumHeight(500)  # Aumentar altura mínima
+        self.canvas.setMinimumWidth(900)   # Definir largura mínima
         results_layout.addWidget(self.canvas)
         
         # Results summary
@@ -1214,42 +1231,83 @@ class MainWindow(QMainWindow):
             self.train_status_label.setVisible(False)
         self.statusBar().showMessage("Treinamento completo")
         
+        # Limpar diretório temporário de treinamento se existir
+        try:
+            import shutil
+            temp_training_dir = os.path.join(os.path.dirname(self.training_data_directory), "temp_training_data")
+            if os.path.exists(temp_training_dir):
+                self.log_widget.log("Removendo diretório temporário de treinamento...")
+                shutil.rmtree(temp_training_dir)
+        except Exception as e:
+            self.log_widget.log(f"Aviso: Não foi possível remover diretório temporário: {str(e)}", level="warning")
+        
         self.current_model = results['model']
         history = results['history']
         
-        # Limpar figura anterior
+        # Limpar figura anterior e redefinir
         self.figure.clear()
         
-        # Aumentar o tamanho da figura
-        self.figure.set_size_inches(10, 6)
+        # Configurar o tamanho da figura - altura reduzida para minimizar espaço vertical
+        self.figure.set_size_inches(14, 6)
         
-        # Adicionar espaço entre subplots e bordas
-        self.figure.subplots_adjust(wspace=0.3, hspace=0.3, left=0.1, right=0.9, top=0.9, bottom=0.1)
+        # Criar grid para melhor controle da posição dos subplots com mínimo espaçamento
+        gs = self.figure.add_gridspec(1, 2, width_ratios=[1, 1], wspace=0.25, hspace=0)
         
-        # Subplot para acurácia de treinamento com mais espaço
-        ax1 = self.figure.add_subplot(1, 2, 1)
+        # Subplot para acurácia de treinamento com formato mais quadrado
+        ax1 = self.figure.add_subplot(gs[0, 0])
         ax1.plot(history['accuracy'], label='acurácia', linewidth=2)
         ax1.plot(history['val_accuracy'], label='val_acurácia', linewidth=2, linestyle='--')
         ax1.set_xlabel('Época', fontsize=12)
         ax1.set_ylabel('Acurácia', fontsize=12)
-        ax1.set_title('Resultados do Treinamento', fontsize=14, fontweight='bold')
-        ax1.legend(fontsize=10)
+        ax1.set_title('Resultados do Treinamento', fontsize=14, fontweight='bold', pad=5)
+        ax1.legend(fontsize=10, loc='lower right')
         ax1.grid(True, linestyle='--', alpha=0.7)
         
         # Melhorar escala do eixo Y para mostrar melhor as diferenças
         y_min = min(min(history['accuracy']), min(history['val_accuracy']))
         y_max = max(max(history['accuracy']), max(history['val_accuracy']))
-        y_margin = (y_max - y_min) * 0.1
+        y_margin = (y_max - y_min) * 0.05  # Margem reduzida
         ax1.set_ylim([max(0, y_min - y_margin), min(1.0, y_max + y_margin)])
         
-        # Subplot para matriz de confusão
+        # Definir proporção mais quadrada para o gráfico de acurácia
+        ax1.set_box_aspect(0.85)  # Proporção da altura/largura mais próxima de 1
+        
+        # Definir limite para épocas no eixo X para evitar esticamento excessivo
+        max_epochs = len(history['accuracy'])
+        ax1.set_xlim([-0.5, max_epochs - 0.5])
+        
+        # Melhorar as marcações do eixo X (épocas)
+        if max_epochs > 10:
+            # Se tivermos muitas épocas, mostrar apenas algumas marcações
+            step = max(1, max_epochs // 8)
+            ax1.set_xticks(range(0, max_epochs, step))
+        else:
+            # Se tivermos poucas épocas, mostrar todas
+            ax1.set_xticks(range(max_epochs))
+        
+        # Ajustar margens para reduzir espaço em branco ao mínimo
+        ax1.margins(x=0.01, y=0.03)
+        
+        # Reduzir espaçamento dos ticks e labels
+        ax1.tick_params(axis='both', which='major', pad=2)
+        
+        # Subplot para matriz de confusão com mais espaço
         if 'confusion_matrix' in results:
-            ax2 = self.figure.add_subplot(1, 2, 2)
+            ax2 = self.figure.add_subplot(gs[0, 1])
             cm = results['confusion_matrix']
             
-            # Use imshow com melhor estética
-            cax = ax2.imshow(cm, interpolation='nearest', cmap='Blues')
-            ax2.set_title('Matriz de Confusão', fontsize=14, fontweight='bold')
+            # Usar as classes atualmente selecionadas em vez das classes do resultado
+            if hasattr(self, 'class_data') and self.class_data:
+                # Obter classes atuais em vez de usar as que vieram do resultado
+                class_names = list(self.class_data.keys())
+            else:
+                # Fallback para as classes do resultado ou classes genéricas
+                class_names = results.get('class_names', [f"Classe {i}" for i in range(cm.shape[0])])
+            
+            # Use imshow com melhor estética e limites definidos
+            # Usar aspect='equal' para manter a matriz quadrada
+            cax = ax2.imshow(cm, interpolation='nearest', cmap='Blues', aspect='equal')
+            ax2.set_title('Matriz de Confusão', fontsize=14, fontweight='bold', pad=5)
             
             # Adicionar valores na matriz com tamanho ajustado
             thresh = cm.max() / 2
@@ -1258,26 +1316,41 @@ class MainWindow(QMainWindow):
                     ax2.text(j, i, str(cm[i, j]), 
                             ha="center", va="center", 
                             color="white" if cm[i, j] > thresh else "black",
-                            fontsize=10)
+                            fontsize=12)
             
-            # Adicionar legendas
-            class_names = results.get('class_names', [f"Classe {i}" for i in range(cm.shape[0])])
+            # Configurar os ticks corretamente com fonte reduzida
             if len(class_names) <= 10:  # Só mostrar nomes se não forem muitos
                 ax2.set_xticks(range(len(class_names)))
                 ax2.set_yticks(range(len(class_names)))
-                ax2.set_xticklabels(class_names, rotation=45, ha="right", fontsize=10)
-                ax2.set_yticklabels(class_names, fontsize=10)
-                
+                ax2.set_xticklabels(class_names, rotation=45, ha="right", fontsize=12)
+                ax2.set_yticklabels(class_names, fontsize=12)
+            
+            # Garantir limite de eixos exatos para a matriz sem margem extra
+            ax2.set_xlim(-0.5, len(class_names) - 0.5)
+            ax2.set_ylim(len(class_names) - 0.5, -0.5)
+            
+            # Definir proporção quadrada para o gráfico da matriz
+            ax2.set_box_aspect(0.95)
+            
+            # Reduzir espaçamento dos ticks e labels
+            ax2.tick_params(axis='both', which='major', pad=2)
+            
             ax2.set_xlabel('Predição', fontsize=12)
             ax2.set_ylabel('Valor Real', fontsize=12)
             
-            # Adicionar colorbar mais estilizada
-            cbar = self.figure.colorbar(cax, ax=ax2, shrink=0.85)
+            # Adicionar colorbar mais compacta
+            cbar = self.figure.colorbar(cax, ax=ax2, shrink=0.65, pad=0.03)
             cbar.ax.tick_params(labelsize=10)
         
-        # Aplicar layout ajustado
-        self.figure.tight_layout()
+        # Aplicar layout com padding mínimo
+        self.figure.tight_layout(pad=1.0, rect=[0, 0, 1, 0.99])
+        
+        # Remover espaço em branco ao redor da figura
+        self.figure.subplots_adjust(top=0.99, bottom=0.08, left=0.06, right=0.98)
+        
+        # Atualizar o canvas com método flush para garantir renderização completa
         self.canvas.draw()
+        self.canvas.flush_events()
         
         # Update results summary com formatação melhorada e mais detalhes
         final_accuracy = history['accuracy'][-1]
@@ -1387,6 +1460,36 @@ class MainWindow(QMainWindow):
             else:
                 train_split = self.split_slider_rgb.value() / 100.0
             
+            # Usar apenas as classes que o usuário selecionou
+            if not hasattr(self, 'class_data') or not self.class_data:
+                QMessageBox.warning(self, "Classes não definidas", 
+                                 "Por favor, selecione as classes na etapa de Upload.")
+                return
+            
+            # Criar um diretório temporário somente com as classes selecionadas
+            import tempfile
+            import shutil
+            
+            # Criar diretório temporário para treinamento
+            self.log_widget.log("Criando diretório temporário para classes selecionadas...")
+            temp_training_dir = os.path.join(os.path.dirname(self.training_data_directory), "temp_training_data")
+            
+            # Limpar diretório temporário se já existir
+            if os.path.exists(temp_training_dir):
+                shutil.rmtree(temp_training_dir)
+            
+            # Criar diretório temporário
+            os.makedirs(temp_training_dir, exist_ok=True)
+            
+            # Copiar apenas as pastas das classes selecionadas
+            for class_name in self.class_data.keys():
+                source_dir = os.path.join(self.training_data_directory, class_name)
+                target_dir = os.path.join(temp_training_dir, class_name)
+                
+                if os.path.exists(source_dir) and os.path.isdir(source_dir):
+                    self.log_widget.log(f"Copiando classe selecionada: {class_name}")
+                    shutil.copytree(source_dir, target_dir)
+            
             # Simular processamento de dados
             if model_type == "RGB":
                 # Verificar atributos RGB para RGB Feature Network
@@ -1395,26 +1498,22 @@ class MainWindow(QMainWindow):
                                       "Por favor, defina e salve os atributos RGB antes de treinar.")
                     return
                 
-                # Processar dados RGB
+                # Processar dados RGB - usar apenas as classes selecionadas
                 self.processed_data = {
-                    'data_dir': self.training_data_directory,
+                    'data_dir': temp_training_dir,
                     'train_split': train_split,
-                    'class_names': [d for d in os.listdir(self.training_data_directory) 
-                                   if os.path.isdir(os.path.join(self.training_data_directory, d))]
+                    'class_names': list(self.class_data.keys())  # Usar apenas as classes selecionadas
                 }
                 
                 # Para um modelo RGB Feature Network real, processaríamos mais dados aqui
                 self.log_widget.log("Processando dados para RGB Feature Network...")
             else:
-                # Processar dados para CNN
+                # Processar dados para CNN - usar apenas as classes selecionadas
                 self.processed_data = {
-                    'data_dir': self.training_data_directory,
+                    'data_dir': temp_training_dir,
                     'train_split': train_split,
-                    'class_names': [d for d in os.listdir(self.training_data_directory) 
-                                   if os.path.isdir(os.path.join(self.training_data_directory, d))],
-                    'total_images': sum(len(os.listdir(os.path.join(self.training_data_directory, d))) 
-                                     for d in os.listdir(self.training_data_directory) 
-                                     if os.path.isdir(os.path.join(self.training_data_directory, d)))
+                    'class_names': list(self.class_data.keys()),  # Usar apenas as classes selecionadas
+                    'total_images': sum(self.class_data.values())  # Somar apenas as imagens nas classes selecionadas
                 }
                 
                 self.log_widget.log(f"Processando dados para CNN: {self.processed_data['total_images']} imagens em {len(self.processed_data['class_names'])} classes")
@@ -1597,6 +1696,10 @@ class MainWindow(QMainWindow):
             # Get train/test split
             train_split = self.train_split_spin.value() / 100.0
             
+            # Verificar se temos classes selecionadas
+            if not hasattr(self, 'class_data') or not self.class_data:
+                raise ValueError("Nenhuma classe foi selecionada")
+                
             if "RGB Feature" in model_type:
                 # Process with RGB Feature extraction
                 if not self.rgb_attributes:
@@ -1619,11 +1722,8 @@ class MainWindow(QMainWindow):
                     'train_split': train_split,
                     'img_width': img_width,
                     'img_height': img_height,
-                    'class_names': [d for d in os.listdir(self.training_data_directory) 
-                                   if os.path.isdir(os.path.join(self.training_data_directory, d))],
-                    'total_images': sum(len(os.listdir(os.path.join(self.training_data_directory, d))) 
-                                     for d in os.listdir(self.training_data_directory) 
-                                     if os.path.isdir(os.path.join(self.training_data_directory, d)))
+                    'class_names': list(self.class_data.keys()),  # Usar apenas as classes selecionadas
+                    'total_images': sum(self.class_data.values())  # Somar apenas as imagens nas classes selecionadas
                 }
                 return result
                 
@@ -1844,8 +1944,17 @@ class MainWindow(QMainWindow):
         """Handle data processing completion."""
         self.statusBar().showMessage("Data processing complete")
         
-        # Guardar os dados processados
+        # Verificar se temos classes selecionadas
+        if not hasattr(self, 'class_data') or not self.class_data:
+            QMessageBox.warning(self, "Erro", "Nenhuma classe foi selecionada para treinamento.")
+            return
+            
+        # Guardar os dados processados, mas assegurar que usamos apenas as classes selecionadas
         self.processed_data = result
+        
+        # Garantir que estamos usando apenas as classes selecionadas pelo usuário
+        if isinstance(self.processed_data, dict) and 'class_names' in self.processed_data:
+            self.processed_data['class_names'] = list(self.class_data.keys())
         
         # Determinar o tipo de modelo atual
         model_type = "CNN" if self.cnn_btn.isChecked() else "RGB"
@@ -1859,8 +1968,8 @@ class MainWindow(QMainWindow):
                 self.log_widget.log("Data processed, but unexpected data format returned")
         else:  # CNN
             if 'total_images' in result:
-                self.log_widget.log(f"Data preparation complete - {result['total_images']} images across "
-                                  f"{len(result['class_names'])} classes")
+                self.log_widget.log(f"Data preparation complete - {sum(self.class_data.values())} images across "
+                                  f"{len(self.class_data)} classes")
             else:
                 self.log_widget.log("Data processed, but unexpected data format returned")
         
@@ -1941,41 +2050,61 @@ class MainWindow(QMainWindow):
                 
                 # Preencher informações básicas sobre o diretório de dados
                 try:
-                    subdirs = [d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))]
-                    train_split = self.train_split_spin.value() / 100.0
-                    
-                    if "RGB Feature" in model_type:
-                        # RGB Feature Network requer atributos RGB, então exibir aviso se necessário
-                        if not self.rgb_attributes:
-                            self.log_widget.log("Atenção: Modelo RGB Feature Network requer atributos RGB definidos", level="warning")
-                    
-                    # Criar estrutura básica de dados para ambos os tipos de modelo
-                    self.processed_data = {
-                        'data_dir': data_dir,
-                        'train_split': train_split,
-                        'class_names': subdirs
-                    }
+                    # Usar apenas as classes que o usuário selecionou
+                    if hasattr(self, 'class_data') and self.class_data:
+                        train_split = self.train_split_spin.value() / 100.0
+                        
+                        if "RGB Feature" in model_type:
+                            # RGB Feature Network requer atributos RGB, então exibir aviso se necessário
+                            if not self.rgb_attributes:
+                                self.log_widget.log("Atenção: Modelo RGB Feature Network requer atributos RGB definidos", level="warning")
+                        
+                        # Criar estrutura básica de dados para ambos os tipos de modelo usando apenas as classes selecionadas
+                        self.processed_data = {
+                            'data_dir': data_dir,
+                            'train_split': train_split,
+                            'class_names': list(self.class_data.keys())  # Usar apenas as classes selecionadas
+                        }
+                    else:
+                        # Se não temos classes selecionadas, não criar dados processados
+                        self.processed_data = None
+                        if "RGB Feature" in model_type:
+                            self.log_widget.log("Atenção: Você precisa selecionar classes na aba Upload", level="warning")
                 except Exception as e:
                     print(f"Erro ao adaptar dados: {str(e)}")
                 
-                # Habilitar o botão de treinamento apropriado
-                if is_cnn and hasattr(self, 'cnn_train_btn'):
-                    self.cnn_train_btn.setEnabled(True)
-                    self.statusBar().showMessage(f"Tipo de modelo alterado para {model_type}. Dados mantidos.")
-                elif hasattr(self, 'rgb_train_btn'):
-                    self.rgb_train_btn.setEnabled(True)
-                    self.statusBar().showMessage(f"Tipo de modelo alterado para {model_type}. Dados mantidos.")
+                # Habilitar o botão de treinamento apropriado apenas se temos classes
+                if hasattr(self, 'class_data') and len(self.class_data) >= 2:
+                    if is_cnn and hasattr(self, 'cnn_train_btn'):
+                        self.cnn_train_btn.setEnabled(True)
+                        self.statusBar().showMessage(f"Tipo de modelo alterado para {model_type}. Dados mantidos.")
+                    elif hasattr(self, 'rgb_train_btn'):
+                        self.rgb_train_btn.setEnabled(True)
+                        self.statusBar().showMessage(f"Tipo de modelo alterado para {model_type}. Dados mantidos.")
+                else:
+                    # Desabilitar botões se não temos classes suficientes
+                    if is_cnn and hasattr(self, 'cnn_train_btn'):
+                        self.cnn_train_btn.setEnabled(False)
+                    elif hasattr(self, 'rgb_train_btn'):
+                        self.rgb_train_btn.setEnabled(False)
+                    self.statusBar().showMessage("Selecione pelo menos 2 classes para treinar")
             else:
                 # Se não conseguimos preservar os dados, informar o usuário
                 self.log_widget.log(f"Tipo de modelo alterado para {model_type}. Você pode precisar processar os dados novamente.", level="info")
                 self.statusBar().showMessage(f"Tipo de modelo alterado. Por favor, processe os dados novamente.")
-                # Não desabilitar o botão se já temos um diretório de treinamento
-                if self.training_data_directory:
+                # Habilitar o botão apenas se temos classes selecionadas
+                if hasattr(self, 'class_data') and len(self.class_data) >= 2:
                     # Habilitar o botão de treinamento apropriado
                     if is_cnn and hasattr(self, 'cnn_train_btn'):
                         self.cnn_train_btn.setEnabled(True)
                     elif hasattr(self, 'rgb_train_btn'):
                         self.rgb_train_btn.setEnabled(True)
+                else:
+                    # Desabilitar botões se não temos classes suficientes
+                    if is_cnn and hasattr(self, 'cnn_train_btn'):
+                        self.cnn_train_btn.setEnabled(False)
+                    elif hasattr(self, 'rgb_train_btn'):
+                        self.rgb_train_btn.setEnabled(False)
     
     def closeEvent(self, event):
         """Handle application close event to properly clean up threads."""
